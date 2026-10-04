@@ -1,5 +1,7 @@
 package com.example.network.model
 
+import com.example.network.NetworkConstants
+
 /**
  * Explicit Connection State Machine required by Ludo-app architecture.
  *
@@ -33,13 +35,18 @@ data class NetworkConnectionState(
     val state: HostConnectionState = HostConnectionState.IDLE,
     val isWifiAvailable: Boolean = false,
     val localIp: String? = null,
-    val serverPort: Int = com.example.network.NetworkConstants.DEFAULT_PORT,
+    val serverPort: Int = NetworkConstants.LUDO_TCP_PORT,
     val isNsdRegistered: Boolean = false,
     val connectedClientIp: String? = null,
     val connectedClientDeviceName: String? = null,
     val lastPingRttMs: Long? = null,
     val lastReceivedMessage: String? = null,
     val lastSentMessage: String? = null,
+    val lastTcpWriteStatus: String? = null,
+    val lastAckStatus: String? = null,
+    val lastNumberResultStatus: String? = null,
+    val reconnectStatus: String = "Idle",
+    val numberTestStatus: String? = null,
     val lastError: String? = null,
     val disconnectReason: String? = null,
     val reconnectAttempts: Int = 0,
@@ -56,7 +63,7 @@ data class NetworkConnectionState(
         HostConnectionState.VERIFYING -> "VERIFYING HANDSHAKE..."
         HostConnectionState.SOCKET_CONNECTED -> "SOCKET CONNECTED"
         HostConnectionState.CONNECTING -> "CONNECTING..."
-        HostConnectionState.HOST_READY -> "HOST READY (WAITING FOR CONTROLLER)"
+        HostConnectionState.HOST_READY -> "HOST READY (PORT $serverPort)"
         HostConnectionState.DISCOVERED -> "CONTROLLER DISCOVERED"
         HostConnectionState.STARTING_HOST -> "STARTING HOST SERVER..."
         HostConnectionState.RECONNECTING -> "WAITING FOR RECONNECT..."
@@ -69,10 +76,10 @@ data class NetworkConnectionState(
     val displayStatusMessage: String get() = when (state) {
         HostConnectionState.CONNECTED -> "Verified connection with Controller (${connectedClientDeviceName ?: connectedClientIp ?: "Client"})"
         HostConnectionState.VERIFYING -> "TCP Socket open. Verifying Handshake & Ping/Pong..."
-        HostConnectionState.HOST_READY -> "Server listening on $localIp:$serverPort (NSD: LudoHost)"
-        HostConnectionState.NETWORK_UNAVAILABLE -> "Please connect to the Controller's Wi-Fi hotspot"
+        HostConnectionState.HOST_READY -> "Server listening on ${localIp ?: "0.0.0.0"}:$serverPort (NSD: ${NetworkConstants.NSD_SERVICE_NAME})"
+        HostConnectionState.NETWORK_UNAVAILABLE -> "Wi-Fi disconnected. Waiting for network..."
         HostConnectionState.ERROR -> lastError ?: "Network error occurred"
-        HostConnectionState.DISCONNECTED -> disconnectReason ?: "Controller disconnected. Server awaiting reconnect."
+        HostConnectionState.DISCONNECTED -> disconnectReason ?: "Controller disconnected. Awaiting reconnect."
         else -> statusTitle
     }
 }

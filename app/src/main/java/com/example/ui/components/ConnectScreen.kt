@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.network.NetworkConstants
 import com.example.network.model.HostConnectionState
 import com.example.network.model.NetworkConnectionState
 import com.example.ui.theme.NeonAmber
@@ -120,7 +121,7 @@ fun ConnectScreen(
                     label = "Wi-Fi",
                     statusText = if (connectionState.isWifiAvailable) "Connected" else "Not Connected",
                     dotColor = if (connectionState.isWifiAvailable) NeonGreenBright else NeonRed,
-                    subtext = connectionState.localIp?.let { "IP: $it" } ?: "No local IP address"
+                    subtext = connectionState.localIp?.let { "Host IP : ${connectionState.serverPort} ($it)" } ?: "No local IP address"
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -130,7 +131,7 @@ fun ConnectScreen(
                     label = "Ludo Host",
                     statusText = if (connectionState.isServerRunning) "ONLINE" else "OFFLINE",
                     dotColor = if (connectionState.isServerRunning) NeonGreenBright else NeonRed,
-                    subtext = "Port: ${connectionState.serverPort} • Service: LudoHost (_ludo._tcp)"
+                    subtext = "TCP Port: ${connectionState.serverPort} • Service: ${NetworkConstants.NSD_SERVICE_NAME} (${NetworkConstants.NSD_SERVICE_TYPE})"
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -152,14 +153,48 @@ fun ConnectScreen(
                     subtext = when (state) {
                         HostConnectionState.CONNECTED -> "Device: ${connectionState.connectedClientDeviceName ?: connectionState.connectedClientIp ?: "Controller Phone"}"
                         HostConnectionState.VERIFYING -> "Verifying Handshake & Ping/Pong..."
-                        else -> "[ Waiting for Controller to join hotspot & connect ]"
+                        else -> "[ Waiting for Controller to connect to ${connectionState.localIp ?: "Host"}:${connectionState.serverPort} ]"
                     }
                 )
 
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0xFF262640))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Prominent Host IP : 8888 & Manual IP info
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF141026),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "AUTHORITATIVE HOST ENDPOINT",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = NeonPurpleBright
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${connectionState.localIp ?: "Waiting for Wi-Fi"} : ${connectionState.serverPort}",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextPrimary
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Controller manual fallback port: ${NetworkConstants.LUDO_TCP_PORT}",
+                            style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary, fontSize = 11.sp)
+                        )
+                    }
+                }
+
                 if (isConnected) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = Color(0xFF262640))
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
                         text = "Status: Connection Verified • Protocol: v1 • Ping: Successful",
@@ -283,7 +318,7 @@ fun ConnectScreen(
             }
         }
 
-        // Section 3: Ludo Number Communication Test
+        // Section 3: Ludo Number Communication Test (Real end-to-end verification)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -304,7 +339,7 @@ fun ConnectScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "When Controller sends NUMBER_SELECTION, Host sends ACK and queues value for the target box. Test local simulation below:",
+                    text = "Real TCP verification: NUMBER_SELECTION → ACK → NUMBER_RESULT (5-second timeout protection). Select number to test:",
                     style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
                 )
 
@@ -336,6 +371,30 @@ fun ConnectScreen(
                                 )
                             }
                         }
+                    }
+                }
+
+                if (connectionState.numberTestStatus != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val isPass = connectionState.numberTestStatus.startsWith("PASS")
+                    val isFail = connectionState.numberTestStatus.startsWith("FAIL")
+                    val borderColor = when {
+                        isPass -> NeonGreenBright
+                        isFail -> NeonRed
+                        else -> NeonAmber
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = borderColor.copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = connectionState.numberTestStatus,
+                            color = borderColor,
+                            modifier = Modifier.padding(10.dp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 }
             }

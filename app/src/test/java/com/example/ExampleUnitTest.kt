@@ -15,11 +15,16 @@ import com.example.network.model.NumberResultMsg
 import com.example.network.model.NumberSelectionMsg
 import com.example.network.model.PingMsg
 import com.example.network.model.PongMsg
+import com.example.network.model.SendResult
+import com.example.network.service.NetworkRequestRegistry
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -249,19 +254,76 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `test scenario 7 - connection state machine verification logic`() {
-        val state = NetworkConnectionState(
-            state = HostConnectionState.HOST_READY,
-            isWifiAvailable = true,
-            localIp = "192.168.43.15"
-        )
-        assertFalse("HOST_READY is not fully connected", state.isFullyConnected)
-        assertTrue("Server is running in HOST_READY", state.isServerRunning)
+    fun `test scenario 7 - TCP port is consistently unified to 8888`() {
+        assertEquals("Authoritative TCP port must be 8888", 8888, NetworkConstants.LUDO_TCP_PORT)
+        assertEquals("DEFAULT_PORT must equal LUDO_TCP_PORT", 8888, NetworkConstants.DEFAULT_PORT)
+        val state = NetworkConnectionState()
+        assertEquals("NetworkConnectionState serverPort must default to 8888", 8888, state.serverPort)
+    }
 
-        val connected = state.copy(
-            state = HostConnectionState.CONNECTED,
-            connectedClientDeviceName = "Controller Phone"
-        )
-        assertTrue("CONNECTED state is fully connected", connected.isFullyConnected)
+    @Test
+    fun `test scenario 8 - real TCP write SendResult model behavior`() {
+        val success = SendResult.Success("HANDSHAKE", 42)
+        assertEquals("HANDSHAKE", success.messageType)
+        assertEquals(42, success.bytesWritten)
+
+        val failure = SendResult.Failure("Socket is closed", java.net.SocketException("Closed"))
+        assertTrue("Failure must detect closed socket", failure.isClosedSocket)
+    }
+
+    @Test
+    fun `test scenario 9 - NetworkRequestRegistry correlates requestId with ACK and NUMBER_RESULT`() = runBlocking {
+        val registry = NetworkRequestRegistry()
+        val testReqId = "req-test-1234"
+
+        val ackDeferred = registry.registerPendingAck(testReqId)
+        val resultDeferred = registry.registerPendingResult(testReqId)
+
+        assertFalse(ackDeferred.isCompleted)
+        assertFalse(resultDeferred.isCompleted)
+
+        // Dispatch unrelated ACK (different requestId) -> must NOT complete deferred
+        val unrelatedAck = AckMsg(requestId = "unrelated-id", status = "OK")
+        val dispatchedUnrelated = registry.dispatchAck(unrelatedAck)
+        assertFalse("Unrelated ACK should not match", dispatchedUnrelated)
+        assertFalse(ackDeferred.isCompleted)
+
+        // Dispatch matching ACK
+        val matchingAck = AckMsg(requestId = testReqId, status = "OK", reason = "Accepted")
+        val dispatchedAck = registry.dispatchAck(matchingAck)
+        assertTrue("Matching ACK must dispatch", dispatchedAck)
+        assertTrue(ackDeferred.isCompleted)
+        val receivedAck = ackDeferred.await()
+        assertEquals(testReqId, receivedAck.requestId)
+        assertEquals("OK", receivedAck.status)
+
+        // Dispatch matching NUMBER_RESULT
+        val matchingResult = NumberResultMsg(boxId = 2, turnId = 1, value = 6, source = "REMOTE", requestId = testReqId)
+        val dispatchedResult = registry.dispatchResult(matchingResult)
+        assertTrue("Matching NUMBER_RESULT must dispatch", dispatchedResult)
+        assertTrue(resultDeferred.isCompleted)
+        val receivedResult = resultDeferred.await()
+        assertEquals(testReqId, receivedResult.requestId)
+        assertEquals(6, receivedResult.value)
+    }
+
+    @Test
+    fun `test scenario 10 - request timeout protection works properly`() = runBlocking {
+        val registry = NetworkRequestRegistry()
+        val testReqId = "req-timeout-check"
+
+        val ackDeferred = registry.registerPendingAck(testReqId)
+
+        try {
+            withTimeout(100L) {
+                ackDeferred.await()
+            }
+            fail("Expected TimeoutCancellationException")
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            // Expected
+            registry.remove(testReqId)
+        }
+
+        assertFalse("Ack should remain uncompleted on timeout", ackDeferred.isCompleted)
     }
 }

@@ -68,7 +68,7 @@ fun LiveLogsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Bluetooth Live Logs",
+                        text = "Network Live Logs",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -86,7 +86,7 @@ fun LiveLogsDialog(
                 }
 
                 Text(
-                    text = "Live Bluetooth packets between Host (App 1) & Controller (App 2):",
+                    text = "Live TCP network packets between Host (App 1) & Controller (App 2):",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )

@@ -2,7 +2,7 @@ package com.example.game.model
 
 /**
  * Indicates whether a number generation was triggered locally on App 1 (Host)
- * or requested remotely by App 2 (Controller) over Bluetooth.
+ * or requested remotely by App 2 (Controller) over local Wi-Fi TCP network.
  */
 enum class RollSource {
     LOCAL,

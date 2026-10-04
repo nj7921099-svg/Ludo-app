@@ -100,7 +100,7 @@ fun ProtocolSpecsDialog(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
-                        text = "Ludo-app = Wi-Fi HOST / SERVER\nController-BT = Wi-Fi CONTROLLER / CLIENT\nFraming: Newline-delimited JSON (\\n)",
+                        text = "Ludo-app = Wi-Fi HOST / SERVER (Port ${NetworkConstants.LUDO_TCP_PORT})\nController-BT = Wi-Fi CONTROLLER / CLIENT\nFraming: Newline-delimited JSON (\\n)",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = NeonPurpleBright
@@ -108,8 +108,8 @@ fun ProtocolSpecsDialog(
                     )
 
                     SpecItem(
-                        title = "1. Network Discovery & Port",
-                        code = "NSD Service Name: ${NetworkConstants.NSD_SERVICE_NAME}\nNSD Service Type: ${NetworkConstants.NSD_SERVICE_TYPE}\nFixed TCP Port: ${NetworkConstants.DEFAULT_PORT}\nController discovers Ludo Host automatically or connects directly to Host IP."
+                        title = "1. Unified TCP Port & NSD Discovery",
+                        code = "Authoritative TCP Port: ${NetworkConstants.LUDO_TCP_PORT}\nManual Fallback Endpoint: <Host_IP>:${NetworkConstants.LUDO_TCP_PORT}\nNSD Service Name: ${NetworkConstants.NSD_SERVICE_NAME}\nNSD Service Type: ${NetworkConstants.NSD_SERVICE_TYPE}\nController auto-discovers Ludo Host via mDNS or connects to Host IP:${NetworkConstants.LUDO_TCP_PORT}."
                     )
 
                     SpecItem(
@@ -180,7 +180,7 @@ fun ProtocolSpecsDialog(
                           "requestId": "req-999",
                           "timestamp": 123456810
                         }
-                        // Broadcast when box is revealed on its turn!
+                        // Sent with matching requestId to verify end-to-end delivery!
                         """.trimIndent()
                     )
                 }

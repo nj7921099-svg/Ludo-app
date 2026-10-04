@@ -18,6 +18,7 @@ import com.example.network.model.NetworkConnectionState
 import com.example.network.model.NetworkMessage
 import com.example.network.model.NumberResultMsg
 import com.example.network.model.NumberSelectionMsg
+import com.example.network.model.SendResult
 import com.example.network.model.StateSyncMsg
 import com.example.network.service.WifiHostServer
 import kotlinx.coroutines.delay
@@ -161,7 +162,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         wifiHostServer.sendMessage(msg)
     }
 
-    private fun handleIncomingNetworkMessage(message: NetworkMessage) {
+    private suspend fun handleIncomingNetworkMessage(message: NetworkMessage) {
         when (message) {
             is NumberSelectionMsg -> {
                 handleNumberSelection(message)
@@ -186,47 +187,79 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Controller sends NUMBER_SELECTION (value, boxId, requestId).
-     *
-     * 1. Ludo Host immediately responds with ACK (containing original requestId).
-     * 2. Queues the command box-specifically.
-     * 3. Upon that box's authoritative turn tap, sends NUMBER_RESULT!
+     * LUDO HOST NUMBER HANDLING:
+     * When NUMBER_SELECTION is received:
+     * 1. Validate message
+     * 2. Validate requestId
+     * 3. Process existing number-selection logic
+     * 4. Send ACK for the same requestId
+     * 5. Send NUMBER_RESULT for the same requestId
      */
-    private fun handleNumberSelection(message: NumberSelectionMsg) {
+    private suspend fun handleNumberSelection(message: NumberSelectionMsg) {
+        // 1 & 2. Validate message & requestId
+        if (message.value !in NetworkConstants.MIN_RANDOM_VALUE..NetworkConstants.MAX_RANDOM_VALUE) {
+            wifiHostServer.appendLog("Rejected NUMBER_SELECTION: value ${message.value} out of range (1..6)")
+            wifiHostServer.sendPacket(
+                AckMsg(
+                    requestId = message.requestId,
+                    status = "ERROR",
+                    reason = "Value ${message.value} must be between 1 and 6"
+                )
+            )
+            return
+        }
+
         val targetBoxId = message.boxId ?: gameEngine.activeBoxId.value
+
+        // 3. Process the existing number-selection logic
         val accepted = gameEngine.queueControllerCommand(
             commandId = message.requestId,
             boxId = targetBoxId,
             value = message.value
         )
 
-        // 1. Immediately send ACK to Controller with original requestId
+        // 4. Send ACK for the same requestId
         val ack = AckMsg(
             requestId = message.requestId,
             status = if (accepted) "OK" else "ERROR",
-            reason = if (accepted) "Stored pending for R$targetBoxId" else "Invalid value or box out of range"
+            reason = if (accepted) "Stored pending for R$targetBoxId" else "Command rejected (duplicate or consumed)"
         )
-        wifiHostServer.sendMessage(ack)
+        val ackResult = wifiHostServer.sendPacket(ack)
+        if (ackResult is SendResult.Success) {
+            wifiHostServer.appendLog("✓ ACK sent for requestId ${message.requestId}")
+        }
 
+        // 5. Send NUMBER_RESULT for the same requestId
         if (accepted) {
-            wifiHostServer.appendLog("✓ Queued Controller value ${message.value} for R$targetBoxId. ACK sent.")
+            val resultMsg = NumberResultMsg(
+                boxId = targetBoxId,
+                turnId = gameEngine.currentTurnId.value,
+                value = message.value,
+                source = "REMOTE",
+                requestId = message.requestId
+            )
+            val resResult = wifiHostServer.sendPacket(resultMsg)
+            if (resResult is SendResult.Success) {
+                wifiHostServer.appendLog("✓ NUMBER_RESULT sent for requestId ${message.requestId} (value: ${message.value})")
+            }
             _uiAux.update { it.copy(lastRollSummary = "Controller queued ${message.value} for R$targetBoxId!") }
-        } else {
-            wifiHostServer.appendLog("Rejected NUMBER_SELECTION value ${message.value} for R$targetBoxId")
         }
     }
 
     /**
-     * Number test button pressed in Connect tab.
+     * Executes real end-to-end NUMBER_SELECTION -> ACK -> NUMBER_RESULT test with 5s timeout.
+     */
+    fun runNumberCommunicationTest(value: Int) {
+        viewModelScope.launch {
+            wifiHostServer.executeNumberTest(value, gameEngine.activeBoxId.value)
+        }
+    }
+
+    /**
+     * Compatibility alias for number test button.
      */
     fun simulateNumberTest(value: Int) {
-        val targetBox = gameEngine.activeBoxId.value
-        val reqId = "test-${UUID.randomUUID().toString().take(6)}"
-        val accepted = gameEngine.queueControllerCommand(reqId, targetBox, value)
-        if (accepted) {
-            wifiHostServer.appendLog("Test simulated: Queued $value for R$targetBox (id: $reqId)")
-            _uiAux.update { it.copy(lastRollSummary = "Test simulated: Queued $value for R$targetBox!") }
-        }
+        runNumberCommunicationTest(value)
     }
 
     fun selectBoxCount(count: Int) {
