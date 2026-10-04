@@ -21,16 +21,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.BluetoothConnected
-import androidx.compose.material.icons.filled.BluetoothDisabled
-import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,45 +56,43 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.example.bluetooth.model.BluetoothConnectionState
-import com.example.bluetooth.model.BluetoothStatusType
+import com.example.network.model.HostConnectionState
+import com.example.network.model.NetworkConnectionState
 import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.NeonDarkBg
 import com.example.ui.theme.NeonDarkCard
 import com.example.ui.theme.NeonDarkCardElevated
-import com.example.ui.theme.NeonGreen
+import com.example.ui.theme.NeonGreenBright
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonPurpleBright
-import com.example.ui.theme.NeonPurpleDeep
 import com.example.ui.theme.NeonRed
-import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(
-    connectionState: BluetoothConnectionState,
+    connectionState: NetworkConnectionState,
     logs: List<String>,
-    onScanClick: () -> Unit,
-    onMakeDiscoverableClick: () -> Unit,
-    onRestartListenerClick: () -> Unit,
+    onRestartServerClick: () -> Unit,
     onDisconnectClick: () -> Unit,
     onOpenProtocolSpecs: () -> Unit,
+    onOpenConnectTab: () -> Unit,
     onClearLogs: () -> Unit,
     onResetGame: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Bluetooth", "Protocol", "Live Logs")
+    val tabs = listOf("Host & Wi-Fi", "Protocol", "Live Logs")
 
-    val statusColor = when (connectionState.status) {
-        BluetoothStatusType.CONNECTED -> NeonGreen
-        BluetoothStatusType.LISTENING -> NeonCyan
-        BluetoothStatusType.CONNECTING, BluetoothStatusType.SCANNING -> NeonAmber
-        BluetoothStatusType.PERMISSIONS_REQUIRED, BluetoothStatusType.ERROR -> NeonRed
-        BluetoothStatusType.BLUETOOTH_OFF, BluetoothStatusType.DISCONNECTED -> Color(0xFF6B7280)
+    val state = connectionState.state
+    val statusColor = when (state) {
+        HostConnectionState.CONNECTED -> NeonGreenBright
+        HostConnectionState.HOST_READY -> Color(0xFF38BDF8)
+        HostConnectionState.VERIFYING, HostConnectionState.SOCKET_CONNECTED -> NeonAmber
+        HostConnectionState.NETWORK_UNAVAILABLE, HostConnectionState.ERROR -> NeonRed
+        else -> Color(0xFF6B7280)
     }
 
     Dialog(
@@ -134,7 +128,7 @@ fun SettingsDialog(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "SETTINGS & BLUETOOTH",
+                            text = "SETTINGS & NETWORK",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.ExtraBold,
                                 letterSpacing = 1.sp,
@@ -184,7 +178,7 @@ fun SettingsDialog(
                 // Tab Contents
                 when (selectedTab) {
                     0 -> {
-                        // Bluetooth Tab
+                        // Host & Wi-Fi Tab
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -209,15 +203,7 @@ fun SettingsDialog(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = when (connectionState.status) {
-                                                BluetoothStatusType.CONNECTED -> "CONNECTED TO CONTROLLER"
-                                                BluetoothStatusType.LISTENING -> "HOST LISTENING (READY FOR APP 2)"
-                                                BluetoothStatusType.CONNECTING -> "CONNECTING..."
-                                                BluetoothStatusType.SCANNING -> "SCANNING..."
-                                                BluetoothStatusType.BLUETOOTH_OFF -> "BLUETOOTH OFF"
-                                                BluetoothStatusType.PERMISSIONS_REQUIRED -> "PERMISSIONS NEEDED"
-                                                else -> "DISCONNECTED"
-                                            },
+                                            text = connectionState.statusTitle,
                                             style = MaterialTheme.typography.titleSmall.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 color = statusColor
@@ -228,14 +214,14 @@ fun SettingsDialog(
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     Text(
-                                        text = connectionState.statusMessage,
+                                        text = connectionState.displayStatusMessage,
                                         style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
                                     )
 
-                                    if (connectionState.connectedDeviceName != null) {
+                                    if (connectionState.localIp != null) {
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = "Controller Device: ${connectionState.connectedDeviceName} (${connectionState.connectedDeviceAddress ?: ""})",
+                                            text = "Local Host: ${connectionState.localIp}:${connectionState.serverPort} (NSD: LudoHost)",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = TextPrimary
@@ -246,7 +232,7 @@ fun SettingsDialog(
                             }
 
                             Text(
-                                text = "CONNECTION CONTROLS",
+                                text = "HOST SERVER CONTROLS",
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = NeonPurpleBright
@@ -259,46 +245,38 @@ fun SettingsDialog(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 OutlinedButton(
-                                    onClick = onMakeDiscoverableClick,
+                                    onClick = {
+                                        onOpenConnectTab()
+                                        onDismiss()
+                                    },
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan.copy(alpha = 0.6f))
                                 ) {
-                                    Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Router, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Make Discoverable")
+                                    Text("Open Connect Tab")
                                 }
 
                                 OutlinedButton(
-                                    onClick = onScanClick,
+                                    onClick = onRestartServerClick,
                                     shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonPurpleBright),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurpleBright.copy(alpha = 0.6f))
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF383858))
                                 ) {
-                                    Icon(Icons.Default.BluetoothSearching, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Nearby & Paired")
+                                    Text("Restart Host Server")
                                 }
 
-                                if (connectionState.status == BluetoothStatusType.CONNECTED) {
+                                if (state == HostConnectionState.CONNECTED) {
                                     OutlinedButton(
                                         onClick = onDisconnectClick,
                                         shape = RoundedCornerShape(10.dp),
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonRed),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, NeonRed.copy(alpha = 0.6f))
                                     ) {
-                                        Text("Disconnect")
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = onRestartListenerClick,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF383858))
-                                    ) {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Restart Server")
+                                        Text("Disconnect Controller")
                                     }
                                 }
                             }
@@ -337,7 +315,7 @@ fun SettingsDialog(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = "App 2 / Controller Protocol Specs",
+                                text = "Wi-Fi TCP & NSD Protocol Specs",
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -352,11 +330,11 @@ fun SettingsDialog(
                             ) {
                                 Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Open Full Specs Sheet")
+                                Text("Open Full Protocol Specs")
                             }
 
                             Text(
-                                text = "Key Message Formats:\n• GAME_CONFIGURATION (Host -> Controller)\n• TURN_UPDATE (Clockwise turn update)\n• PROVIDE_NUMBER (Controller -> Host)\n• NUMBER_RESULT (Host -> Controller)",
+                                text = "Key Message Formats:\n• HANDSHAKE / HANDSHAKE_ACK (role, v1)\n• PING / PONG (RTT calculation)\n• NUMBER_SELECTION (Controller -> Host)\n• ACK (Host -> Controller)\n• NUMBER_RESULT (Host -> Controller)\n• CONFIG / STATE_SYNC",
                                 style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary),
                                 lineHeight = 18.sp
                             )
@@ -393,45 +371,40 @@ fun SettingsDialog(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            LiveLogsContent(logs = logs)
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                reverseLayout = true
+                            ) {
+                                items(logs.reversed()) { logEntry ->
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = when {
+                                            logEntry.contains("[RX]") -> NeonCyan.copy(alpha = 0.15f)
+                                            logEntry.contains("[TX]") -> NeonPurple.copy(alpha = 0.15f)
+                                            logEntry.contains("ERROR") || logEntry.contains("fail") -> NeonRed.copy(alpha = 0.15f)
+                                            else -> NeonDarkCardElevated
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = logEntry,
+                                            modifier = Modifier.padding(6.dp),
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            color = when {
+                                                logEntry.contains("[RX]") -> NeonCyan
+                                                logEntry.contains("[TX]") -> NeonPurpleBright
+                                                logEntry.contains("ERROR") || logEntry.contains("fail") -> NeonRed
+                                                else -> TextPrimary
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LiveLogsContent(logs: List<String>) {
-    androidx.compose.foundation.lazy.LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        reverseLayout = true
-    ) {
-        items(logs.reversed()) { logEntry ->
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = when {
-                    logEntry.contains("[RX]") -> NeonCyan.copy(alpha = 0.15f)
-                    logEntry.contains("[TX]") -> NeonPurple.copy(alpha = 0.15f)
-                    logEntry.contains("ERROR") || logEntry.contains("fail") -> NeonRed.copy(alpha = 0.15f)
-                    else -> NeonDarkCardElevated
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = logEntry,
-                    modifier = Modifier.padding(6.dp),
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    color = when {
-                        logEntry.contains("[RX]") -> NeonCyan
-                        logEntry.contains("[TX]") -> NeonPurpleBright
-                        logEntry.contains("ERROR") || logEntry.contains("fail") -> NeonRed
-                        else -> TextPrimary
-                    }
-                )
             }
         }
     }

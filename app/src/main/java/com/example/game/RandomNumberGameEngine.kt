@@ -1,11 +1,11 @@
 package com.example.game
 
-import com.example.bluetooth.BluetoothConstants
 import com.example.game.model.BoxState
 import com.example.game.model.BoxTurnState
 import com.example.game.model.PendingControllerCommand
 import com.example.game.model.RollResult
 import com.example.game.model.RollSource
+import com.example.network.NetworkConstants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +28,7 @@ import java.util.UUID
  * - Duplicate command protection: duplicate commandIds are acknowledged without corrupting state.
  */
 class RandomNumberGameEngine(
-    initialBoxCount: Int = BluetoothConstants.DEFAULT_BOX_COUNT
+    initialBoxCount: Int = NetworkConstants.DEFAULT_BOX_COUNT
 ) : GameEngine {
 
     override val engineType: String = "AuthoritativeTurnLudoRNG_v3"
@@ -39,7 +39,7 @@ class RandomNumberGameEngine(
     override val isGameStarted: StateFlow<Boolean> = _isGameStarted.asStateFlow()
 
     private val _selectedBoxCount = MutableStateFlow(
-        initialBoxCount.coerceIn(BluetoothConstants.MIN_BOXES, BluetoothConstants.MAX_BOXES)
+        initialBoxCount.coerceIn(NetworkConstants.MIN_BOXES, NetworkConstants.MAX_BOXES)
     )
     override val selectedBoxCount: StateFlow<Int> = _selectedBoxCount.asStateFlow()
 
@@ -64,7 +64,7 @@ class RandomNumberGameEngine(
 
     override fun selectBoxCount(count: Int): Boolean {
         if (_isGameStarted.value) return false
-        if (count !in BluetoothConstants.MIN_BOXES..BluetoothConstants.MAX_BOXES) return false
+        if (count !in NetworkConstants.MIN_BOXES..NetworkConstants.MAX_BOXES) return false
         _selectedBoxCount.value = count
         return true
     }
@@ -99,7 +99,7 @@ class RandomNumberGameEngine(
     @Synchronized
     override fun queueControllerCommand(commandId: String, boxId: Int, value: Int): Boolean {
         // Validate value: integer 1 to 6 only
-        if (value !in BluetoothConstants.MIN_RANDOM_VALUE..BluetoothConstants.MAX_RANDOM_VALUE) {
+        if (value !in NetworkConstants.MIN_RANDOM_VALUE..NetworkConstants.MAX_RANDOM_VALUE) {
             return false
         }
 
@@ -179,7 +179,7 @@ class RandomNumberGameEngine(
             Triple(valFromController, RollSource.REMOTE, cmdId)
         } else {
             // Local fallback: generate random integer 1 to 6
-            val randomVal = secureRandom.nextInt(BluetoothConstants.MAX_RANDOM_VALUE) + 1
+            val randomVal = secureRandom.nextInt(NetworkConstants.MAX_RANDOM_VALUE) + 1
             Triple(randomVal, RollSource.LOCAL, null)
         }
 

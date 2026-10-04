@@ -33,7 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.bluetooth.BluetoothConstants
+import com.example.network.NetworkConstants
 import com.example.ui.theme.NeonDarkCard
 import com.example.ui.theme.NeonDarkCardElevated
 import com.example.ui.theme.NeonPurple
@@ -75,7 +75,7 @@ fun ProtocolSpecsDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Controller Protocol Specs",
+                            text = "Wi-Fi Protocol Specs",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
@@ -100,7 +100,7 @@ fun ProtocolSpecsDialog(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
-                        text = "IMPORTANT: Ludo Game (App 1) is the SOLE turn authority. Controller (App 2) can send a number for ANY box at ANY time.",
+                        text = "Ludo-app = Wi-Fi HOST / SERVER\nController-BT = Wi-Fi CONTROLLER / CLIENT\nFraming: Newline-delimited JSON (\\n)",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = NeonPurpleBright
@@ -108,77 +108,79 @@ fun ProtocolSpecsDialog(
                     )
 
                     SpecItem(
-                        title = "1. Service UUIDs & Framing",
-                        code = "App Custom UUID:\n${BluetoothConstants.APP_SERVICE_UUID}\n\nStandard SPP Fallback:\n${BluetoothConstants.STANDARD_SPP_UUID}\n\nDelimiter: Newline (\\n) JSON streams over RFCOMM."
+                        title = "1. Network Discovery & Port",
+                        code = "NSD Service Name: ${NetworkConstants.NSD_SERVICE_NAME}\nNSD Service Type: ${NetworkConstants.NSD_SERVICE_TYPE}\nFixed TCP Port: ${NetworkConstants.DEFAULT_PORT}\nController discovers Ludo Host automatically or connects directly to Host IP."
                     )
 
                     SpecItem(
-                        title = "2. Controller Command (App 2 -> App 1)",
+                        title = "2. Handshake (Controller -> Host)",
                         code = """
                         {
-                          "type": "CONTROLLER_COMMAND",
-                          "commandId": "1001",
-                          "boxId": 4,
-                          "value": 6
-                        }
-                        // Note: Can be sent for ANY box at ANY time!
-                        // App 1 stores it specifically for R4.
-                        // It does NOT affect current turn until R4's turn arrives.
-                        """.trimIndent()
-                    )
-
-                    SpecItem(
-                        title = "3. Command Acknowledgement (App 1 -> App 2)",
-                        code = """
-                        {
-                          "type": "COMMAND_ACK",
-                          "commandId": "1001",
-                          "boxId": 4,
-                          "accepted": true,
-                          "reason": "Stored specifically for R4"
+                          "type": "HANDSHAKE",
+                          "protocolVersion": 1,
+                          "role": "CONTROLLER",
+                          "deviceName": "Controller Phone",
+                          "requestId": "uuid-1",
+                          "timestamp": 123456789
                         }
                         """.trimIndent()
                     )
 
                     SpecItem(
-                        title = "4. Number Revealed (App 1 -> App 2)",
+                        title = "3. Handshake ACK (Host -> Controller)",
+                        code = """
+                        {
+                          "type": "HANDSHAKE_ACK",
+                          "protocolVersion": 1,
+                          "role": "LUDO_HOST",
+                          "status": "OK",
+                          "deviceName": "Ludo Phone",
+                          "requestId": "uuid-1",
+                          "timestamp": 123456790
+                        }
+                        """.trimIndent()
+                    )
+
+                    SpecItem(
+                        title = "4. Number Selection (Controller -> Host)",
+                        code = """
+                        {
+                          "type": "NUMBER_SELECTION",
+                          "value": 5,
+                          "boxId": 4,
+                          "requestId": "req-999",
+                          "timestamp": 123456800
+                        }
+                        // Controller can send for any box at any time!
+                        """.trimIndent()
+                    )
+
+                    SpecItem(
+                        title = "5. ACK (Host -> Controller)",
+                        code = """
+                        {
+                          "type": "ACK",
+                          "requestId": "req-999",
+                          "status": "OK",
+                          "reason": "Stored pending for R4",
+                          "timestamp": 123456801
+                        }
+                        """.trimIndent()
+                    )
+
+                    SpecItem(
+                        title = "6. Number Result (Host -> Controller)",
                         code = """
                         {
                           "type": "NUMBER_RESULT",
                           "boxId": 4,
                           "turnId": 3,
-                          "value": 6,
+                          "value": 5,
                           "source": "REMOTE",
-                          "commandId": "1001"
+                          "requestId": "req-999",
+                          "timestamp": 123456810
                         }
-                        // Note: Sent ONLY when R4's turn arrives and user taps R4.
-                        // Once revealed, command 1001 is consumed and cleared!
-                        """.trimIndent()
-                    )
-
-                    SpecItem(
-                        title = "5. Game Configuration (App 1 -> App 2)",
-                        code = """
-                        {
-                          "type": "GAME_CONFIGURATION",
-                          "boxCount": 5,
-                          "turnId": 1,
-                          "activeBoxId": 1,
-                          "isGameStarted": true
-                        }
-                        """.trimIndent()
-                    )
-
-                    SpecItem(
-                        title = "6. Clockwise Turn Update (App 1 -> App 2)",
-                        code = """
-                        {
-                          "type": "TURN_UPDATE",
-                          "turnId": 2,
-                          "activeBoxId": 2,
-                          "previousBoxId": 1,
-                          "previousResult": 4
-                        }
+                        // Broadcast when box is revealed on its turn!
                         """.trimIndent()
                     )
                 }

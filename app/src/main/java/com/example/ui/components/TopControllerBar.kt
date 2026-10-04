@@ -31,39 +31,42 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.bluetooth.model.BluetoothConnectionState
-import com.example.bluetooth.model.BluetoothStatusType
+import com.example.network.model.HostConnectionState
+import com.example.network.model.NetworkConnectionState
 import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCyan
-import com.example.ui.theme.NeonGreen
+import com.example.ui.theme.NeonGreenBright
 import com.example.ui.theme.NeonPurple
-import com.example.ui.theme.NeonPurpleBright
 import com.example.ui.theme.NeonRed
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
 @Composable
 fun TopControllerBar(
-    connectionState: BluetoothConnectionState,
+    connectionState: NetworkConnectionState,
+    onStatusCardClick: () -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val statusDotColor = when (connectionState.status) {
-        BluetoothStatusType.CONNECTED -> NeonGreen
-        BluetoothStatusType.LISTENING -> NeonCyan
-        BluetoothStatusType.CONNECTING, BluetoothStatusType.SCANNING -> NeonAmber
-        BluetoothStatusType.PERMISSIONS_REQUIRED, BluetoothStatusType.ERROR -> NeonRed
+    val state = connectionState.state
+    val isConnected = state == HostConnectionState.CONNECTED
+
+    val statusDotColor = when (state) {
+        HostConnectionState.CONNECTED -> NeonGreenBright
+        HostConnectionState.HOST_READY -> Color(0xFF38BDF8)
+        HostConnectionState.VERIFYING, HostConnectionState.SOCKET_CONNECTED -> NeonAmber
+        HostConnectionState.NETWORK_UNAVAILABLE, HostConnectionState.ERROR -> NeonRed
         else -> Color(0xFF6B7280)
     }
 
-    val statusSubtitle = when (connectionState.status) {
-        BluetoothStatusType.CONNECTED -> "Connected"
-        BluetoothStatusType.LISTENING -> "Host Listening"
-        BluetoothStatusType.CONNECTING -> "Connecting..."
-        BluetoothStatusType.SCANNING -> "Searching..."
-        BluetoothStatusType.BLUETOOTH_OFF -> "Bluetooth Off"
-        BluetoothStatusType.PERMISSIONS_REQUIRED -> "Perms Needed"
-        else -> "Disconnected"
+    val statusSubtitle = when (state) {
+        HostConnectionState.CONNECTED -> "Controller: ${connectionState.connectedClientDeviceName ?: connectionState.connectedClientIp ?: "Connected"}"
+        HostConnectionState.VERIFYING -> "Verifying Handshake..."
+        HostConnectionState.SOCKET_CONNECTED -> "Socket Open"
+        HostConnectionState.HOST_READY -> "Host Ready (${connectionState.localIp ?: "Listening"})"
+        HostConnectionState.NETWORK_UNAVAILABLE -> "Wi-Fi Hotspot Needed"
+        HostConnectionState.ERROR -> "Network Error"
+        else -> "Awaiting Controller"
     }
 
     Row(
@@ -71,13 +74,13 @@ fun TopControllerBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Left Card: CONTROLLER status
+        // Left Card: Wi-Fi Host & Controller status (clickable to open Connect tab)
         Card(
             modifier = Modifier
                 .weight(1f)
                 .height(64.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .clickable { onSettingsClick() }
+                .clickable { onStatusCardClick() }
                 .testTag("controller_status_header_card"),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0A18)),
@@ -89,43 +92,40 @@ fun TopControllerBar(
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.Center
             ) {
-                // Top line: CONTROLLER
+                // Top line: LUDO HOST & CONTROLLER
                 Text(
-                    text = "CONTROLLER",
+                    text = if (isConnected) "CONTROLLER CONNECTED" else "LUDO WI-FI HOST",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         letterSpacing = 0.5.sp,
-                        color = TextPrimary
+                        color = if (isConnected) NeonGreenBright else TextPrimary
                     )
                 )
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Bottom line: Status on left, "Bluetooth ●" on right
+                // Bottom line: Status on left, "Wi-Fi ●" on right
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (connectionState.connectedDeviceName != null)
-                            "Connected (${connectionState.connectedDeviceName})"
-                        else
-                            statusSubtitle,
+                        text = statusSubtitle,
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = TextSecondary,
-                            fontSize = 12.sp
+                            fontSize = 11.sp
                         ),
                         maxLines = 1
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Bluetooth",
+                            text = "Wi-Fi",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = TextSecondary,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -140,7 +140,7 @@ fun TopControllerBar(
             }
         }
 
-        // Right Button: Sliders / Settings Button ("setting btn jo top right corner m h")
+        // Right Button: Settings Button
         Box(
             modifier = Modifier
                 .size(64.dp)

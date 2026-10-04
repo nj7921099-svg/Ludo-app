@@ -1,12 +1,20 @@
 package com.example
 
-import com.example.bluetooth.model.BluetoothMessage
-import com.example.bluetooth.model.CommandAckMessage
-import com.example.bluetooth.model.ControllerCommandMessage
-import com.example.bluetooth.model.GameConfigurationMessage
-import com.example.bluetooth.model.NumberResultMessage
 import com.example.game.RandomNumberGameEngine
 import com.example.game.model.RollSource
+import com.example.network.NetworkConstants
+import com.example.network.model.AckMsg
+import com.example.network.model.ConfigMsg
+import com.example.network.model.GameEventMsg
+import com.example.network.model.HandshakeAckMsg
+import com.example.network.model.HandshakeMsg
+import com.example.network.model.HostConnectionState
+import com.example.network.model.NetworkConnectionState
+import com.example.network.model.NetworkMessage
+import com.example.network.model.NumberResultMsg
+import com.example.network.model.NumberSelectionMsg
+import com.example.network.model.PingMsg
+import com.example.network.model.PongMsg
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -136,7 +144,7 @@ class ExampleUnitTest {
         // Set R4 -> 6
         engine.queueControllerCommand("cmd-r4", 4, 6)
 
-        // Tap R1, R2, R3, R5
+        // Tap R1, R2, R3
         val r1 = engine.tapBox(1)
         val r2 = engine.tapBox(2)
         val r3 = engine.tapBox(3)
@@ -151,48 +159,109 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `test scenario 5 - message serialization for ControllerCommandMessage and CommandAckMessage`() {
-        val cmd = ControllerCommandMessage(
-            commandId = "1001",
-            boxId = 4,
-            value = 6
+    fun `test scenario 5 - Wi-Fi NetworkMessage serialization and framing`() {
+        // Handshake
+        val hs = HandshakeMsg(
+            protocolVersion = 1,
+            role = NetworkConstants.ROLE_CONTROLLER,
+            deviceName = "Controller Phone",
+            requestId = "req-100"
         )
-        val jsonStr = cmd.toJsonString()
-        val parsed = BluetoothMessage.fromJson(jsonStr) as? ControllerCommandMessage
-        assertNotNull(parsed)
-        assertEquals("1001", parsed?.commandId)
-        assertEquals(4, parsed?.boxId)
-        assertEquals(6, parsed?.value)
+        val hsJson = hs.toJsonString()
+        val parsedHs = NetworkMessage.fromJson(hsJson) as? HandshakeMsg
+        assertNotNull(parsedHs)
+        assertEquals(1, parsedHs?.protocolVersion)
+        assertEquals(NetworkConstants.ROLE_CONTROLLER, parsedHs?.role)
+        assertEquals("Controller Phone", parsedHs?.deviceName)
 
-        val ack = CommandAckMessage(
-            commandId = "1001",
-            boxId = 4,
-            accepted = true,
-            reason = "Stored specifically for R4"
+        // Handshake ACK
+        val hsAck = HandshakeAckMsg(
+            protocolVersion = 1,
+            role = NetworkConstants.ROLE_HOST,
+            status = "OK",
+            deviceName = "Ludo Host",
+            requestId = "req-100"
         )
-        val ackJson = ack.toJsonString()
-        val parsedAck = BluetoothMessage.fromJson(ackJson) as? CommandAckMessage
+        val parsedHsAck = NetworkMessage.fromJson(hsAck.toJsonString()) as? HandshakeAckMsg
+        assertNotNull(parsedHsAck)
+        assertEquals("OK", parsedHsAck?.status)
+        assertEquals("req-100", parsedHsAck?.requestId)
+
+        // Number Selection
+        val numSel = NumberSelectionMsg(
+            value = 5,
+            boxId = 4,
+            requestId = "req-999"
+        )
+        val parsedNum = NetworkMessage.fromJson(numSel.toJsonString()) as? NumberSelectionMsg
+        assertNotNull(parsedNum)
+        assertEquals(5, parsedNum?.value)
+        assertEquals(4, parsedNum?.boxId)
+        assertEquals("req-999", parsedNum?.requestId)
+
+        // ACK
+        val ack = AckMsg(
+            requestId = "req-999",
+            status = "OK",
+            reason = "Stored pending for R4"
+        )
+        val parsedAck = NetworkMessage.fromJson(ack.toJsonString()) as? AckMsg
         assertNotNull(parsedAck)
-        assertEquals("1001", parsedAck?.commandId)
-        assertEquals(4, parsedAck?.boxId)
-        assertTrue(parsedAck?.accepted == true)
-        assertEquals("Stored specifically for R4", parsedAck?.reason)
+        assertEquals("req-999", parsedAck?.requestId)
+        assertEquals("OK", parsedAck?.status)
+
+        // Number Result
+        val res = NumberResultMsg(
+            boxId = 4,
+            turnId = 3,
+            value = 5,
+            source = "REMOTE",
+            requestId = "req-999"
+        )
+        val parsedRes = NetworkMessage.fromJson(res.toJsonString()) as? NumberResultMsg
+        assertNotNull(parsedRes)
+        assertEquals(4, parsedRes?.boxId)
+        assertEquals(5, parsedRes?.value)
+        assertEquals("REMOTE", parsedRes?.source)
+
+        // Ping / Pong
+        val ping = PingMsg(requestId = "ping-1")
+        val pong = PongMsg(requestId = "ping-1", originalTimestamp = 1000L)
+        assertNotNull(NetworkMessage.fromJson(ping.toJsonString()) as? PingMsg)
+        assertNotNull(NetworkMessage.fromJson(pong.toJsonString()) as? PongMsg)
     }
 
     @Test
     fun `test scenario 6 - boxId string like R4 is parsed correctly`() {
         val rawJson = """
             {
-               "type": "CONTROLLER_COMMAND",
-               "commandId": "cmd-test",
+               "type": "NUMBER_SELECTION",
+               "requestId": "cmd-test",
                "boxId": "R4",
                "value": 5
             }
         """.trimIndent()
-        val parsed = BluetoothMessage.fromJson(rawJson) as? ControllerCommandMessage
+        val parsed = NetworkMessage.fromJson(rawJson) as? NumberSelectionMsg
         assertNotNull(parsed)
         assertEquals(4, parsed?.boxId)
         assertEquals(5, parsed?.value)
-        assertEquals("cmd-test", parsed?.commandId)
+        assertEquals("cmd-test", parsed?.requestId)
+    }
+
+    @Test
+    fun `test scenario 7 - connection state machine verification logic`() {
+        val state = NetworkConnectionState(
+            state = HostConnectionState.HOST_READY,
+            isWifiAvailable = true,
+            localIp = "192.168.43.15"
+        )
+        assertFalse("HOST_READY is not fully connected", state.isFullyConnected)
+        assertTrue("Server is running in HOST_READY", state.isServerRunning)
+
+        val connected = state.copy(
+            state = HostConnectionState.CONNECTED,
+            connectedClientDeviceName = "Controller Phone"
+        )
+        assertTrue("CONNECTED state is fully connected", connected.isFullyConnected)
     }
 }
