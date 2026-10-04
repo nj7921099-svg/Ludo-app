@@ -9,6 +9,7 @@ import com.example.game.model.BoxState
 import com.example.game.model.RollSource
 import com.example.network.NetworkConstants
 import com.example.network.model.AckMsg
+import com.example.network.model.BoxIdParser
 import com.example.network.model.ConfigMsg
 import com.example.network.model.GameEventMsg
 import com.example.network.model.GetConfigMsg
@@ -189,60 +190,100 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * LUDO HOST NUMBER HANDLING:
      * When NUMBER_SELECTION is received:
-     * 1. Validate message
-     * 2. Validate requestId
-     * 3. Process existing number-selection logic
-     * 4. Send ACK for the same requestId
-     * 5. Send NUMBER_RESULT for the same requestId
+     * 1. Validate value 1..6
+     * 2. Normalize and validate boxId (NO SILENT FALLBACK on invalid boxId!)
+     * 3. Validate target box is within active game range
+     * 4. Process existing number-selection logic
+     * 5. Send ACK for the SAME requestId
+     * 6. Send NUMBER_RESULT for the SAME requestId
      */
     private suspend fun handleNumberSelection(message: NumberSelectionMsg) {
-        // 1 & 2. Validate message & requestId
+        // 1. Validate value 1..6
         if (message.value !in NetworkConstants.MIN_RANDOM_VALUE..NetworkConstants.MAX_RANDOM_VALUE) {
-            wifiHostServer.appendLog("Rejected NUMBER_SELECTION: value ${message.value} out of range (1..6)")
+            val reason = "Value ${message.value} out of allowed range (${NetworkConstants.MIN_RANDOM_VALUE}..${NetworkConstants.MAX_RANDOM_VALUE})"
+            wifiHostServer.appendLog("Rejected NUMBER_SELECTION: $reason")
             wifiHostServer.sendPacket(
                 AckMsg(
                     requestId = message.requestId,
                     status = "ERROR",
-                    reason = "Value ${message.value} must be between 1 and 6"
+                    reason = reason
                 )
             )
             return
         }
 
-        val targetBoxId = message.boxId ?: gameEngine.activeBoxId.value
+        // 2. Validate boxId: NO SILENT FALLBACK on invalid or unrecognized boxId!
+        if (message.isExplicitBoxIdProvided && !message.isBoxIdValid) {
+            val reason = message.boxIdErrorReason ?: "Invalid or unsupported boxId '${message.rawBoxId}'. Expected B1-B6 or R1-R6."
+            wifiHostServer.appendLog("Rejected NUMBER_SELECTION: $reason")
+            wifiHostServer.sendPacket(
+                AckMsg(
+                    requestId = message.requestId,
+                    status = "ERROR",
+                    reason = reason
+                )
+            )
+            return
+        }
 
-        // 3. Process the existing number-selection logic
+        // 3. Determine and validate target box
+        val maxAllowed = if (gameEngine.isGameStarted.value) gameEngine.activeBoxCount.value else gameEngine.selectedBoxCount.value
+        val targetBoxId = if (message.isExplicitBoxIdProvided) {
+            val specified = message.boxId!!
+            if (specified !in 1..maxAllowed) {
+                val label = message.rawBoxId ?: "B$specified"
+                val reason = "Box $label is out of current active game range (1..$maxAllowed)"
+                wifiHostServer.appendLog("Rejected NUMBER_SELECTION: $reason")
+                wifiHostServer.sendPacket(
+                    AckMsg(
+                        requestId = message.requestId,
+                        status = "ERROR",
+                        reason = reason
+                    )
+                )
+                return
+            }
+            specified
+        } else {
+            // Only use activeBoxId when the protocol message genuinely does NOT specify a boxId!
+            gameEngine.activeBoxId.value
+        }
+
+        // 4. Process the existing number-selection logic
         val accepted = gameEngine.queueControllerCommand(
             commandId = message.requestId,
             boxId = targetBoxId,
             value = message.value
         )
 
-        // 4. Send ACK for the same requestId
+        val targetLabel = "R$targetBoxId"
+
+        // 5. Send ACK for the SAME requestId
         val ack = AckMsg(
             requestId = message.requestId,
             status = if (accepted) "OK" else "ERROR",
-            reason = if (accepted) "Stored pending for R$targetBoxId" else "Command rejected (duplicate or consumed)"
+            reason = if (accepted) "Stored pending for $targetLabel" else "Command rejected (duplicate or consumed)"
         )
         val ackResult = wifiHostServer.sendPacket(ack)
         if (ackResult is SendResult.Success) {
-            wifiHostServer.appendLog("✓ ACK sent for requestId ${message.requestId}")
+            wifiHostServer.appendLog("✓ ACK sent for requestId ${message.requestId} (target: $targetLabel)")
         }
 
-        // 5. Send NUMBER_RESULT for the same requestId
+        // 6. Send NUMBER_RESULT for the SAME requestId
         if (accepted) {
             val resultMsg = NumberResultMsg(
                 boxId = targetBoxId,
                 turnId = gameEngine.currentTurnId.value,
                 value = message.value,
                 source = "REMOTE",
+                rawBoxId = message.rawBoxId ?: BoxIdParser.toControllerBoxId(targetBoxId),
                 requestId = message.requestId
             )
             val resResult = wifiHostServer.sendPacket(resultMsg)
             if (resResult is SendResult.Success) {
-                wifiHostServer.appendLog("✓ NUMBER_RESULT sent for requestId ${message.requestId} (value: ${message.value})")
+                wifiHostServer.appendLog("✓ NUMBER_RESULT sent for requestId ${message.requestId} (target: $targetLabel, value: ${message.value})")
             }
-            _uiAux.update { it.copy(lastRollSummary = "Controller queued ${message.value} for R$targetBoxId!") }
+            _uiAux.update { it.copy(lastRollSummary = "Controller queued ${message.value} for $targetLabel!") }
         }
     }
 

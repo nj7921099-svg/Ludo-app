@@ -4,6 +4,8 @@ import com.example.game.RandomNumberGameEngine
 import com.example.game.model.RollSource
 import com.example.network.NetworkConstants
 import com.example.network.model.AckMsg
+import com.example.network.model.BoxIdParseResult
+import com.example.network.model.BoxIdParser
 import com.example.network.model.ConfigMsg
 import com.example.network.model.GameEventMsg
 import com.example.network.model.HandshakeAckMsg
@@ -221,6 +223,7 @@ class ExampleUnitTest {
             turnId = 3,
             value = 5,
             source = "REMOTE",
+            rawBoxId = "B4",
             requestId = "req-999"
         )
         val parsedRes = NetworkMessage.fromJson(res.toJsonString()) as? NumberResultMsg
@@ -249,8 +252,11 @@ class ExampleUnitTest {
         val parsed = NetworkMessage.fromJson(rawJson) as? NumberSelectionMsg
         assertNotNull(parsed)
         assertEquals(4, parsed?.boxId)
-        assertEquals(5, parsed?.value)
-        assertEquals("cmd-test", parsed?.requestId)
+        assertEquals("R4", parsed?.rawBoxId)
+        assertTrue(parsed!!.isExplicitBoxIdProvided)
+        assertTrue(parsed.isBoxIdValid)
+        assertEquals(5, parsed.value)
+        assertEquals("cmd-test", parsed.requestId)
     }
 
     @Test
@@ -325,5 +331,101 @@ class ExampleUnitTest {
         }
 
         assertFalse("Ack should remain uncompleted on timeout", ackDeferred.isCompleted)
+    }
+
+    @Test
+    fun `test scenario 11 - BoxIdParser correctly normalizes B1-B6 to 1-6`() {
+        val bMappings = mapOf(
+            "B1" to 1,
+            "B2" to 2,
+            "B3" to 3,
+            "B4" to 4,
+            "B5" to 5,
+            "B6" to 6,
+            "b1" to 1,
+            "b6" to 6
+        )
+
+        bMappings.forEach { (raw, expectedNum) ->
+            val result = BoxIdParser.parse(raw)
+            assertTrue("Expected Valid for $raw", result is BoxIdParseResult.Valid)
+            assertEquals("Normalized number for $raw", expectedNum, (result as BoxIdParseResult.Valid).boxNumber)
+        }
+    }
+
+    @Test
+    fun `test scenario 12 - BoxIdParser correctly normalizes R1-R6 to 1-6`() {
+        val rMappings = mapOf(
+            "R1" to 1,
+            "R2" to 2,
+            "R3" to 3,
+            "R4" to 4,
+            "R5" to 5,
+            "R6" to 6,
+            "r3" to 3
+        )
+
+        rMappings.forEach { (raw, expectedNum) ->
+            val result = BoxIdParser.parse(raw)
+            assertTrue("Expected Valid for $raw", result is BoxIdParseResult.Valid)
+            assertEquals("Normalized number for $raw", expectedNum, (result as BoxIdParseResult.Valid).boxNumber)
+        }
+    }
+
+    @Test
+    fun `test scenario 13 - BoxIdParser identifies invalid boxIds without silent fallback`() {
+        val invalidInputs = listOf("B0", "B7", "B99", "R0", "R8", "0", "7", "invalid", "X3", "-1")
+
+        invalidInputs.forEach { invalid ->
+            val result = BoxIdParser.parse(invalid)
+            assertTrue("Expected Invalid for '$invalid'", result is BoxIdParseResult.Invalid)
+        }
+
+        val notSpecifiedInputs = listOf(null, "", "   ")
+        notSpecifiedInputs.forEach { empty ->
+            val result = BoxIdParser.parse(empty)
+            assertEquals("Expected NotSpecified for '$empty'", BoxIdParseResult.NotSpecified, result)
+        }
+    }
+
+    @Test
+    fun `test scenario 14 - Controller NUMBER_SELECTION with B3 parses accurately`() {
+        val json = """
+            {
+               "type": "NUMBER_SELECTION",
+               "requestId": "ctrl-req-123",
+               "boxId": "B3",
+               "value": 5
+            }
+        """.trimIndent()
+
+        val parsed = NetworkMessage.fromJson(json) as? NumberSelectionMsg
+        assertNotNull(parsed)
+        assertEquals(3, parsed?.boxId)
+        assertEquals("B3", parsed?.rawBoxId)
+        assertTrue(parsed!!.isExplicitBoxIdProvided)
+        assertTrue(parsed.isBoxIdValid)
+        assertEquals(5, parsed.value)
+        assertEquals("ctrl-req-123", parsed.requestId)
+    }
+
+    @Test
+    fun `test scenario 15 - Controller NUMBER_SELECTION with invalid boxId flags error`() {
+        val json = """
+            {
+               "type": "NUMBER_SELECTION",
+               "requestId": "ctrl-req-bad",
+               "boxId": "INVALID_BOX",
+               "value": 4
+            }
+        """.trimIndent()
+
+        val parsed = NetworkMessage.fromJson(json) as? NumberSelectionMsg
+        assertNotNull(parsed)
+        assertNull(parsed?.boxId)
+        assertEquals("INVALID_BOX", parsed?.rawBoxId)
+        assertTrue(parsed!!.isExplicitBoxIdProvided)
+        assertFalse(parsed.isBoxIdValid)
+        assertNotNull(parsed.boxIdErrorReason)
     }
 }

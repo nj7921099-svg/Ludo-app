@@ -41,11 +41,10 @@ sealed class NetworkMessage {
 
         private fun parseBoxId(json: JSONObject): Int? {
             if (!json.has("boxId")) return null
-            val raw = json.opt("boxId")
-            if (raw is Number) return raw.toInt()
-            val str = raw?.toString()?.trim() ?: ""
-            val digits = str.removePrefix("R").removePrefix("r").trim()
-            return digits.toIntOrNull()
+            return when (val res = BoxIdParser.parse(json.opt("boxId"))) {
+                is BoxIdParseResult.Valid -> res.boxNumber
+                else -> null
+            }
         }
 
         private fun parseRequestId(json: JSONObject): String {
@@ -129,21 +128,68 @@ sealed class NetworkMessage {
                         timestamp = timestamp
                     )
 
-                    TYPE_NUMBER_SELECTION, TYPE_CONTROLLER_COMMAND -> NumberSelectionMsg(
-                        value = json.optInt("value", 1),
-                        boxId = parseBoxId(json),
-                        requestId = requestId,
-                        timestamp = timestamp
-                    )
+                    TYPE_NUMBER_SELECTION, TYPE_CONTROLLER_COMMAND -> {
+                        val hasBoxIdField = json.has("boxId")
+                        val parseResult = if (hasBoxIdField) BoxIdParser.parse(json.opt("boxId")) else BoxIdParseResult.NotSpecified
 
-                    TYPE_NUMBER_RESULT -> NumberResultMsg(
-                        boxId = json.optInt("boxId", 1),
-                        turnId = json.optLong("turnId", 1L),
-                        value = json.optInt("value", 1),
-                        source = json.optString("source", "LOCAL"),
-                        requestId = requestId,
-                        timestamp = timestamp
-                    )
+                        val boxNumber: Int?
+                        val rawBoxStr: String?
+                        val isExplicit: Boolean
+                        val isValid: Boolean
+                        val errReason: String?
+
+                        when (parseResult) {
+                            is BoxIdParseResult.Valid -> {
+                                boxNumber = parseResult.boxNumber
+                                rawBoxStr = parseResult.raw
+                                isExplicit = true
+                                isValid = true
+                                errReason = null
+                            }
+                            is BoxIdParseResult.Invalid -> {
+                                boxNumber = null
+                                rawBoxStr = parseResult.raw
+                                isExplicit = true
+                                isValid = false
+                                errReason = parseResult.reason
+                            }
+                            is BoxIdParseResult.NotSpecified -> {
+                                boxNumber = null
+                                rawBoxStr = null
+                                isExplicit = false
+                                isValid = true
+                                errReason = null
+                            }
+                        }
+
+                        NumberSelectionMsg(
+                            value = json.optInt("value", 1),
+                            boxId = boxNumber,
+                            rawBoxId = rawBoxStr,
+                            isExplicitBoxIdProvided = isExplicit,
+                            isBoxIdValid = isValid,
+                            boxIdErrorReason = errReason,
+                            requestId = requestId,
+                            timestamp = timestamp
+                        )
+                    }
+
+                    TYPE_NUMBER_RESULT -> {
+                        val rawBoxObj = if (json.has("boxId")) json.opt("boxId") else null
+                        val parsedBox = when (val res = BoxIdParser.parse(rawBoxObj)) {
+                            is BoxIdParseResult.Valid -> res.boxNumber
+                            else -> json.optInt("boxNumber", json.optInt("boxId", 1))
+                        }
+                        NumberResultMsg(
+                            boxId = parsedBox,
+                            turnId = json.optLong("turnId", 1L),
+                            value = json.optInt("value", 1),
+                            source = json.optString("source", "LOCAL"),
+                            rawBoxId = rawBoxObj?.toString(),
+                            requestId = requestId,
+                            timestamp = timestamp
+                        )
+                    }
 
                     TYPE_GAME_EVENT, TYPE_TURN_UPDATE -> GameEventMsg(
                         event = json.optString("event", "TURN_UPDATE"),
@@ -343,6 +389,10 @@ data class StateSyncMsg(
 data class NumberSelectionMsg(
     val value: Int,
     val boxId: Int? = null,
+    val rawBoxId: String? = null,
+    val isExplicitBoxIdProvided: Boolean = (boxId != null || rawBoxId != null),
+    val isBoxIdValid: Boolean = true,
+    val boxIdErrorReason: String? = null,
     override val requestId: String = UUID.randomUUID().toString(),
     override val timestamp: Long = System.currentTimeMillis()
 ) : NetworkMessage() {
@@ -351,7 +401,11 @@ data class NumberSelectionMsg(
     override fun toJsonObject(): JSONObject = JSONObject().apply {
         put("type", type)
         put("value", value)
-        if (boxId != null) put("boxId", boxId)
+        if (rawBoxId != null) {
+            put("boxId", rawBoxId)
+        } else if (boxId != null) {
+            put("boxId", boxId)
+        }
         put("requestId", requestId)
         put("timestamp", timestamp)
     }
@@ -362,6 +416,7 @@ data class NumberResultMsg(
     val turnId: Long,
     val value: Int,
     val source: String = "LOCAL",
+    val rawBoxId: String? = null,
     override val requestId: String = UUID.randomUUID().toString(),
     override val timestamp: Long = System.currentTimeMillis()
 ) : NetworkMessage() {
@@ -369,7 +424,9 @@ data class NumberResultMsg(
 
     override fun toJsonObject(): JSONObject = JSONObject().apply {
         put("type", type)
-        put("boxId", boxId)
+        put("boxId", rawBoxId ?: boxId)
+        put("boxNumber", boxId)
+        put("boxLabel", BoxIdParser.toHostBoxId(boxId))
         put("turnId", turnId)
         put("value", value)
         put("source", source)
