@@ -1,0 +1,6 @@
+{
+  "name": "Ludo Host",
+  "description": "Host application and Bluetooth random number generator prototype for future Ludo game",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

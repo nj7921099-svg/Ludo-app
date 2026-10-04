@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle die shadow -->
+    <path
+        android:fillColor="#33000000"
+        android:pathData="M32,36 h44 c5.5,0 10,4.5 10,10 v42 c0,5.5 -4.5,10 -10,10 h-44 c-5.5,0 -10,-4.5 -10,-10 v-42 c0,-5.5 4.5,-10 10,-10 z" />
+
+    <!-- Die main body (pure white with rounded corners) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,30 h44 c5.5,0 10,4.5 10,10 v42 c0,5.5 -4.5,10 -10,10 h-44 c-5.5,0 -10,-4.5 -10,-10 v-42 c0,-5.5 4.5,-10 10,-10 z" />
+
+    <!-- Die subtle top/left highlight -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M30,30 h44 c5.5,0 10,4.5 10,10 v6 h-58 v-10 c0,-3.3 2.7,-6 6,-6 z" />
+
+    <!-- Die Pips (Dots) in rich primary color #4F46E5 -->
+    <!-- Top-left pip -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M40,43 a 3.5,3.5 0 1,0 0.001,0 Z" />
+    <!-- Top-right pip -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M64,43 a 3.5,3.5 0 1,0 0.001,0 Z" />
+    <!-- Middle-left pip -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M40,56 a 3.5,3.5 0 1,0 0.001,0 Z" />
+    <!-- Middle-right pip -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M64,56 a 3.5,3.5 0 1,0 0.001,0 Z" />
+    <!-- Bottom-left pip -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M40,69 a 3.5,3.5 0 1,0 0.001,0 Z" />
+    <!-- Bottom-right pip -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M64,69 a 3.5,3.5 0 1,0 0.001,0 Z" />
+
+    <!-- Bluetooth connectivity badge in top-right corner of safe area -->
+    <!-- Badge background circle -->
+    <path
+        android:fillColor="#06B6D4"
+        android:pathData="M77,31 a 11,11 0 1,0 0.001,0 Z" />
+
+    <!-- Bluetooth symbol inside badge -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M77,24 v14 M77,24 l4.5,4 -4.5,3 M77,31 l4.5,3 -4.5,4 M73,28 l8,6 M73,34 l8,-6" />
+
+</vector>
