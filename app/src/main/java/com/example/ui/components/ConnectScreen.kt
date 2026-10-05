@@ -339,7 +339,7 @@ fun ConnectScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Real TCP verification: NUMBER_SELECTION → ACK → NUMBER_RESULT (5-second timeout protection). Select number to test:",
+                    text = "Select a number to queue as a pending command. The number remains pending until that player's turn is tapped on the board:",
                     style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
                 )
 

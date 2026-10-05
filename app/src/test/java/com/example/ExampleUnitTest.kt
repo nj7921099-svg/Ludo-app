@@ -428,4 +428,178 @@ class ExampleUnitTest {
         assertFalse(parsed.isBoxIdValid)
         assertNotNull(parsed.boxIdErrorReason)
     }
+
+    @Test
+    fun `test required case 1 - Controller B4 to 6 stores as pending and nothing is revealed immediately`() {
+        val engine = RandomNumberGameEngine(4)
+        engine.selectBoxCount(4)
+        engine.startGame()
+
+        // Incoming Controller command: B4 -> 6
+        val parsedBox = (BoxIdParser.parse("B4") as BoxIdParseResult.Valid).boxNumber
+        val queued = engine.queueControllerCommand("req-t1", parsedBox, 6)
+        assertTrue("Command B4 -> 6 must be accepted", queued)
+
+        // R4 must store 6 as pending
+        assertEquals(6, engine.boxesState.value[4]?.pendingApp2Value)
+        assertEquals("req-t1", engine.boxesState.value[4]?.pendingApp2RequestId)
+
+        // CRITICAL: Nothing is revealed immediately!
+        assertNull("R4 must NOT be revealed immediately upon command receipt", engine.boxesState.value[4]?.currentValue)
+        assertEquals("Active turn must still be R1", 1, engine.activeBoxId.value)
+    }
+
+    @Test
+    fun `test required case 2 - Current turn is R2, user taps R2, R2 does not get R4 pending value`() {
+        val engine = RandomNumberGameEngine(4)
+        engine.selectBoxCount(4)
+        engine.startGame()
+
+        // Controller sent B4 -> 6
+        engine.queueControllerCommand("req-t2", 4, 6)
+
+        // Move to turn R2 by tapping R1
+        engine.tapBox(1)
+        assertEquals(2, engine.activeBoxId.value)
+
+        // User taps R2
+        val r2Result = engine.tapBox(2)
+        assertNotNull(r2Result)
+
+        // R2 must NOT get 6 from R4! It uses its own local random (1..6)
+        assertEquals(RollSource.LOCAL, r2Result!!.source)
+        assertNull("R2 has no pending command", r2Result.commandId)
+
+        // R4 remains pending with 6!
+        assertEquals("R4 pending value 6 must remain intact", 6, engine.boxesState.value[4]?.pendingApp2Value)
+        assertNull("R4 is not revealed yet", engine.boxesState.value[4]?.currentValue)
+    }
+
+    @Test
+    fun `test required case 3 - Current turn is R4, user taps R4, R4 reveals 6 and consumes command exactly once`() {
+        val engine = RandomNumberGameEngine(4)
+        engine.selectBoxCount(4)
+        engine.startGame()
+
+        // Controller sent B4 -> 6
+        engine.queueControllerCommand("req-t3", 4, 6)
+
+        // Progress turns: R1 -> R2 -> R3 -> R4
+        engine.tapBox(1)
+        engine.tapBox(2)
+        engine.tapBox(3)
+        assertEquals(4, engine.activeBoxId.value)
+
+        // User taps R4
+        val r4Result = engine.tapBox(4)
+        assertNotNull(r4Result)
+        assertEquals(6, r4Result!!.value)
+        assertEquals(RollSource.REMOTE, r4Result.source)
+        assertEquals("req-t3", r4Result.commandId)
+        assertEquals("req-t3", r4Result.requestId)
+
+        // Pending command must be cleared/consumed exactly once!
+        assertNull("R4 pending command must be cleared after consumption", engine.boxesState.value[4]?.pendingApp2Value)
+        assertEquals(6, engine.boxesState.value[4]?.currentValue)
+
+        // Consumed command cannot be reused or re-queued
+        val reuseRejected = engine.queueControllerCommand("req-t3", 4, 6)
+        assertFalse("Consumed commandId must be rejected if resent", reuseRejected)
+    }
+
+    @Test
+    fun `test required case 4 - Controller sends B4 to 6, B2 to 3, B5 to 1, independent pending commands`() {
+        val engine = RandomNumberGameEngine(5)
+        engine.selectBoxCount(5)
+        engine.startGame()
+
+        assertTrue(engine.queueControllerCommand("cmd-b4", 4, 6))
+        assertTrue(engine.queueControllerCommand("cmd-b2", 2, 3))
+        assertTrue(engine.queueControllerCommand("cmd-b5", 5, 1))
+
+        assertEquals(6, engine.boxesState.value[4]?.pendingApp2Value)
+        assertEquals(3, engine.boxesState.value[2]?.pendingApp2Value)
+        assertEquals(1, engine.boxesState.value[5]?.pendingApp2Value)
+
+        // Tap R1 -> local random
+        val r1 = engine.tapBox(1)
+        assertEquals(RollSource.LOCAL, r1!!.source)
+
+        // Tap R2 -> reveals 3
+        val r2 = engine.tapBox(2)
+        assertEquals(3, r2!!.value)
+        assertEquals(RollSource.REMOTE, r2.source)
+        assertEquals("cmd-b2", r2.commandId)
+
+        // R4 and R5 still preserve their exact pending values!
+        assertEquals(6, engine.boxesState.value[4]?.pendingApp2Value)
+        assertEquals(1, engine.boxesState.value[5]?.pendingApp2Value)
+
+        // Tap R3 -> local random
+        val r3 = engine.tapBox(3)
+        assertEquals(RollSource.LOCAL, r3!!.source)
+
+        // Tap R4 -> reveals 6
+        val r4 = engine.tapBox(4)
+        assertEquals(6, r4!!.value)
+        assertEquals("cmd-b4", r4.commandId)
+
+        // Tap R5 -> reveals 1
+        val r5 = engine.tapBox(5)
+        assertEquals(1, r5!!.value)
+        assertEquals("cmd-b5", r5.commandId)
+    }
+
+    @Test
+    fun `test required case 5 - Duplicate requestId received, only one command exists and only one game action can consume it`() {
+        val engine = RandomNumberGameEngine(4)
+        engine.selectBoxCount(4)
+        engine.startGame()
+
+        // First attempt with req-dup
+        val first = engine.queueControllerCommand("req-dup", 2, 5)
+        assertTrue(first)
+
+        // Second attempt with identical req-dup (e.g. TCP retry)
+        val second = engine.queueControllerCommand("req-dup", 2, 5)
+        assertTrue(second) // Idempotent acknowledgment
+
+        // Only ONE pending command exists on R2
+        assertEquals(5, engine.boxesState.value[2]?.pendingApp2Value)
+
+        // Advance to R2 and tap
+        engine.tapBox(1)
+        val r2Result = engine.tapBox(2)
+        assertEquals(5, r2Result!!.value)
+        assertEquals("req-dup", r2Result.commandId)
+
+        // After consumption, a third attempt with req-dup MUST be rejected
+        val thirdAfterConsume = engine.queueControllerCommand("req-dup", 2, 5)
+        assertFalse("Already-consumed command must be rejected", thirdAfterConsume)
+    }
+
+    @Test
+    fun `test required case 6 - Invalid boxId or invalid number is rejected safely without fallback to active box`() {
+        val engine = RandomNumberGameEngine(4)
+        engine.selectBoxCount(4)
+        engine.startGame()
+
+        // Turn is currently R1
+        assertEquals(1, engine.activeBoxId.value)
+
+        // Case 6A: Number out of range (> 6 or < 1)
+        assertFalse("Value 0 must be rejected", engine.queueControllerCommand("bad-1", 1, 0))
+        assertFalse("Value 7 must be rejected", engine.queueControllerCommand("bad-2", 1, 7))
+
+        // Case 6B: Box out of range (> 4 for 4-player game)
+        assertFalse("Box 5 in a 4-player game must be rejected", engine.queueControllerCommand("bad-3", 5, 4))
+        assertFalse("Box 0 must be rejected", engine.queueControllerCommand("bad-4", 0, 4))
+
+        // Active box R1 must NOT have any pending command created by these invalid requests
+        assertNull("R1 must remain free of invalid pending commands", engine.boxesState.value[1]?.pendingApp2Value)
+
+        // BoxIdParser rejection verification
+        assertTrue(BoxIdParser.parse("B99") is BoxIdParseResult.Invalid)
+        assertTrue(BoxIdParser.parse("INVALID_BOX") is BoxIdParseResult.Invalid)
+    }
 }

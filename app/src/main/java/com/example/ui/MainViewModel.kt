@@ -249,7 +249,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             gameEngine.activeBoxId.value
         }
 
-        // 4. Process the existing number-selection logic
+        // 4. Process the existing number-selection logic (stores as pending for target box)
         val accepted = gameEngine.queueControllerCommand(
             commandId = message.requestId,
             boxId = targetBoxId,
@@ -258,7 +258,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val targetLabel = "R$targetBoxId"
 
-        // 5. Send ACK for the SAME requestId
+        // 5. Send ACK for the SAME requestId confirming receipt and pending storage
         val ack = AckMsg(
             requestId = message.requestId,
             status = if (accepted) "OK" else "ERROR",
@@ -266,24 +266,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         val ackResult = wifiHostServer.sendPacket(ack)
         if (ackResult is SendResult.Success) {
-            wifiHostServer.appendLog("✓ ACK sent for requestId ${message.requestId} (target: $targetLabel)")
+            wifiHostServer.appendLog("✓ ACK sent for requestId ${message.requestId} (target: $targetLabel, pending value: ${message.value})")
         }
 
-        // 6. Send NUMBER_RESULT for the SAME requestId
+        // CRITICAL FIX: DO NOT send NUMBER_RESULT here!
+        // The command is stored as pending permanently for targetBoxId.
+        // NUMBER_RESULT will ONLY be generated when that box's actual turn arrives
+        // and the user taps that box in tapBox().
         if (accepted) {
-            val resultMsg = NumberResultMsg(
-                boxId = targetBoxId,
-                turnId = gameEngine.currentTurnId.value,
-                value = message.value,
-                source = "REMOTE",
-                rawBoxId = message.rawBoxId ?: BoxIdParser.toControllerBoxId(targetBoxId),
-                requestId = message.requestId
-            )
-            val resResult = wifiHostServer.sendPacket(resultMsg)
-            if (resResult is SendResult.Success) {
-                wifiHostServer.appendLog("✓ NUMBER_RESULT sent for requestId ${message.requestId} (target: $targetLabel, value: ${message.value})")
-            }
-            _uiAux.update { it.copy(lastRollSummary = "Controller queued ${message.value} for $targetLabel!") }
+            _uiAux.update { it.copy(lastRollSummary = "Controller queued ${message.value} for $targetLabel as pending!") }
+            wifiHostServer.appendLog("Command for $targetLabel (${message.rawBoxId ?: targetLabel} -> ${message.value}) marked pending. Not revealed until $targetLabel's turn.")
         }
     }
 
@@ -338,16 +330,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             wifiHostServer.appendLog("Turn ${result.turnId}: R${result.boxId} revealed ${result.value} via $sourceLabel. Next turn: R${gameEngine.activeBoxId.value}")
 
-            // Broadcast NUMBER_RESULT to Controller client
+            // Broadcast NUMBER_RESULT to Controller client ONLY upon actual turn reveal
             if (wifiHostServer.connectionState.value.isFullyConnected) {
                 val resultMsg = NumberResultMsg(
                     boxId = result.boxId,
                     turnId = result.turnId,
                     value = result.value,
                     source = result.source.name,
-                    requestId = result.requestId
+                    rawBoxId = BoxIdParser.toControllerBoxId(result.boxId),
+                    requestId = result.commandId ?: result.requestId
                 )
                 wifiHostServer.sendMessage(resultMsg)
+                wifiHostServer.appendLog("✓ NUMBER_RESULT sent upon R${result.boxId} turn reveal (value: ${result.value}, source: ${result.source}, requestId: ${resultMsg.requestId})")
 
                 // Also send TURN_UPDATE event
                 val eventMsg = GameEventMsg(
