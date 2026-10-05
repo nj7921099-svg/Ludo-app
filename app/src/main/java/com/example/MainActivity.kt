@@ -60,6 +60,7 @@ import com.example.ui.components.GlobalConnectionIndicator
 import com.example.ui.components.ProtocolSpecsDialog
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.TopControllerBar
+import com.example.ui.components.ludo.LudoGameBoard
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.NeonDarkBg
 import com.example.ui.theme.NeonPurple
@@ -244,39 +245,50 @@ fun MainScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // SELECT PLAYERS Card
-                            BoxCountSelector(
-                                selectedCount = if (uiState.isGameStarted) uiState.activeBoxCount else uiState.selectedBoxCount,
-                                isGameStarted = uiState.isGameStarted,
-                                onCountSelected = { count ->
-                                    viewModel.selectBoxCount(count)
-                                },
-                                onStartGame = {
-                                    viewModel.startGame()
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Dynamic Game Arena: R1..Rn with clockwise arrows
-                            GameArena(
-                                boxes = if (uiState.isGameStarted) {
-                                    uiState.boxes
-                                } else {
-                                    // Preview boxes before Start Game is tapped
-                                    (1..uiState.selectedBoxCount).map { id ->
-                                        com.example.game.model.BoxState(boxId = id)
-                                    }
-                                },
-                                activeBoxCount = if (uiState.isGameStarted) uiState.activeBoxCount else uiState.selectedBoxCount,
-                                onBoxTap = { boxId ->
-                                    if (!uiState.isGameStarted) {
+                            if (!uiState.isGameStarted) {
+                                // SELECT PLAYERS Card
+                                BoxCountSelector(
+                                    selectedCount = uiState.selectedBoxCount,
+                                    isGameStarted = false,
+                                    onCountSelected = { count ->
+                                        viewModel.selectBoxCount(count)
+                                    },
+                                    onStartGame = {
                                         viewModel.startGame()
-                                    } else {
-                                        viewModel.tapBox(boxId)
                                     }
-                                }
-                            )
+                                )
+
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                // Dynamic Game Arena: R1..Rn with clockwise arrows
+                                GameArena(
+                                    boxes = (1..uiState.selectedBoxCount).map { id ->
+                                        com.example.game.model.BoxState(boxId = id)
+                                    },
+                                    activeBoxCount = uiState.selectedBoxCount,
+                                    onBoxTap = {
+                                        viewModel.startGame()
+                                    }
+                                )
+                            } else {
+                                // Real Playable Ludo Game Board UI
+                                LudoGameBoard(
+                                    gameState = uiState.ludoGameState,
+                                    pendingCommands = uiState.pendingNumbers,
+                                    onDiceClick = {
+                                        viewModel.activateLudoDice()
+                                    },
+                                    onTokenClick = { tokenId ->
+                                        viewModel.moveLudoToken(tokenId)
+                                    },
+                                    onNewGame = {
+                                        viewModel.restartLudoRematch()
+                                    },
+                                    onBackToSetup = {
+                                        viewModel.resetToSetup()
+                                    }
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(14.dp))
 

@@ -82,6 +82,7 @@ fun BoxCountSelector(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 choices.forEach { count ->
+                    val isSupported = count in 2..4
                     val isSelected = selectedCount == count
                     val scale by animateFloatAsState(
                         targetValue = if (isSelected) 1.05f else 1.0f,
@@ -90,7 +91,7 @@ fun BoxCountSelector(
                     )
 
                     val borderColor by animateColorAsState(
-                        targetValue = if (isSelected) Color(0xFFE9D5FF) else NeonPurple.copy(alpha = 0.7f),
+                        targetValue = if (isSelected) Color(0xFFE9D5FF) else NeonPurple.copy(alpha = if (isSupported) 0.7f else 0.25f),
                         animationSpec = tween(200),
                         label = "player_btn_border"
                     )
@@ -106,29 +107,52 @@ fun BoxCountSelector(
                             .scale(scale)
                             .size(56.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .background(bgColor)
+                            .background(bgColor.copy(alpha = if (isSupported) 1f else 0.45f))
                             .border(
                                 width = if (isSelected) 2.5.dp else 1.5.dp,
                                 color = borderColor,
                                 shape = RoundedCornerShape(16.dp)
                             )
-                            .clickable {
+                            .clickable(enabled = isSupported) {
                                 onCountSelected(count)
                             }
                             .testTag("box_count_button_$count"),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "$count",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 24.sp,
-                                color = if (isSelected) Color(0xFFFFFFFF) else Color(0xFFE2E8F0)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "$count",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 20.sp,
+                                    color = if (isSelected) Color(0xFFFFFFFF) else if (isSupported) Color(0xFFE2E8F0) else Color(0xFF6B5C82)
+                                )
                             )
-                        )
+                            if (!isSupported) {
+                                Text(
+                                    text = "P10",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF7A6894)
+                                )
+                            }
+                        }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Standard Ludo board supports 2, 3, or 4 players.",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    color = Color(0xFF8E84A8)
+                )
+            )
 
             Spacer(modifier = Modifier.height(18.dp))
 

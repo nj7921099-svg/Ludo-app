@@ -7,6 +7,13 @@ import com.example.game.GameEngine
 import com.example.game.RandomNumberGameEngine
 import com.example.game.model.BoxState
 import com.example.game.model.RollSource
+import com.example.game.ludo.engine.DiceActivationResult
+import com.example.game.ludo.engine.LudoDiceBridge
+import com.example.game.ludo.engine.LudoGameEngine
+import com.example.game.ludo.engine.PendingDiceCommand
+import com.example.game.ludo.engine.PendingNumberStore
+import com.example.game.ludo.model.LudoGameState
+import com.example.game.ludo.model.LudoMoveResult
 import com.example.network.NetworkConstants
 import com.example.network.model.AckMsg
 import com.example.network.model.BoxIdParser
@@ -49,12 +56,19 @@ data class MainUiState(
     val currentTab: AppTab = AppTab.GAME,
     val isProtocolInfoVisible: Boolean = false,
     val lastRollSummary: String? = null,
-    val isInputLocked: Boolean = false
+    val isInputLocked: Boolean = false,
+    val ludoGameState: LudoGameState = LudoGameState(),
+    val pendingNumbers: Map<Int, Int> = emptyMap()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val gameEngine: GameEngine = RandomNumberGameEngine(NetworkConstants.DEFAULT_BOX_COUNT)
+
+    // Ludo Core Engine & Pending Number Store (Phase 3 Integration)
+    val ludoGameEngine: LudoGameEngine = LudoGameEngine()
+    val pendingNumberStore: PendingNumberStore = PendingNumberStore()
+    val ludoDiceBridge: LudoDiceBridge = LudoDiceBridge(ludoGameEngine, pendingNumberStore)
 
     // Dedicated Wi-Fi Host TCP server & NSD advertiser
     val wifiHostServer: WifiHostServer = WifiHostServer(application.applicationContext, viewModelScope)
@@ -92,10 +106,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MainUiState> = combine(
         gameSnapshotFlow,
         gameEngine.boxesState,
+        ludoGameEngine.gameState,
+        pendingNumberStore.pendingCommands,
         wifiHostServer.connectionState,
         _currentTab,
         _uiAux
-    ) { snapshot, boxesMap, connState, tab, aux ->
+    ) { args: Array<Any?> ->
+        val snapshot = args[0] as GameSnapshot
+        val boxesMap = args[1] as Map<Int, BoxState>
+        val ludoState = args[2] as LudoGameState
+        val pendingMap = args[3] as Map<Int, PendingDiceCommand>
+        val connState = args[4] as NetworkConnectionState
+        val tab = args[5] as AppTab
+        val aux = args[6] as UiAuxState
+
         val sortedBoxes = if (snapshot.isStarted) {
             (1..snapshot.activeCount).map { id ->
                 boxesMap[id] ?: BoxState(boxId = id)
@@ -103,6 +127,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             emptyList()
         }
+
+        val pendingNumbersMap = pendingMap.mapValues { it.value.number }
 
         MainUiState(
             isGameStarted = snapshot.isStarted,
@@ -115,7 +141,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             currentTab = tab,
             isProtocolInfoVisible = aux.isProtocolInfoVisible,
             lastRollSummary = aux.lastRollSummary,
-            isInputLocked = aux.isInputLocked
+            isInputLocked = aux.isInputLocked,
+            ludoGameState = ludoState,
+            pendingNumbers = pendingNumbersMap
         )
     }.stateIn(
         scope = viewModelScope,
@@ -249,11 +277,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             gameEngine.activeBoxId.value
         }
 
-        // 4. Process the existing number-selection logic (stores as pending for target box)
+        // 4. Process number-selection logic (stores as pending for target box in both engines)
         val accepted = gameEngine.queueControllerCommand(
             commandId = message.requestId,
             boxId = targetBoxId,
             value = message.value
+        )
+
+        // Phase 3 bridge: queue into PendingNumberStore for LudoGameEngine
+        pendingNumberStore.queueCommand(
+            commandId = message.requestId,
+            playerId = targetBoxId,
+            number = message.value,
+            rawBoxId = message.rawBoxId
         )
 
         val targetLabel = "R$targetBoxId"
@@ -305,10 +341,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startGame() {
         if (gameEngine.startGame()) {
             val count = gameEngine.activeBoxCount.value
+            ludoGameEngine.initGame(count.coerceIn(2, 4))
             _uiAux.update { it.copy(lastRollSummary = "Game started with $count boxes! R1's turn (tap to roll).") }
             wifiHostServer.appendLog("Game started with $count boxes. Active turn: R1")
             sendCurrentGameConfiguration()
         }
+    }
+
+    /**
+     * Activates the dice for the currently active player using the Phase 3 Ludo bridge.
+     * Uses PendingNumberStore if a controller command was sent for this player, otherwise local random.
+     */
+    fun activateLudoDice(): DiceActivationResult? {
+        val result = ludoDiceBridge.onDiceActivated()
+        if (result != null) {
+            val currentState = ludoGameEngine.gameState.value
+            val sourceLabel = if (result.source == RollSource.REMOTE) "Controller" else "Local"
+
+            if (currentState.currentPlayerId != result.playerId) {
+                // No legal moves or 3rd consecutive six: turn passed to next player
+                _uiAux.update {
+                    it.copy(
+                        lastRollSummary = "Player ${result.playerId} rolled ${result.diceValue} ($sourceLabel) with no legal moves. Turn passed to Player ${currentState.currentPlayerId}."
+                    )
+                }
+            } else {
+                _uiAux.update {
+                    it.copy(
+                        lastRollSummary = "Player ${result.playerId} rolled ${result.diceValue} ($sourceLabel). Tap a highlighted token."
+                    )
+                }
+            }
+            wifiHostServer.appendLog("Dice roll: Player ${result.playerId} rolled ${result.diceValue} via $sourceLabel")
+
+            // Broadcast NUMBER_RESULT to Controller client
+            if (wifiHostServer.connectionState.value.isFullyConnected) {
+                val resultMsg = NumberResultMsg(
+                    boxId = result.playerId,
+                    turnId = gameEngine.currentTurnId.value,
+                    value = result.diceValue,
+                    source = result.source.name,
+                    rawBoxId = result.rawBoxId ?: BoxIdParser.toControllerBoxId(result.playerId),
+                    requestId = result.commandId ?: UUID.randomUUID().toString()
+                )
+                wifiHostServer.sendMessage(resultMsg)
+                wifiHostServer.appendLog("✓ NUMBER_RESULT sent for Player ${result.playerId} (value: ${result.diceValue}, source: ${result.source})")
+
+                // If turn passed because of no legal moves, also broadcast TURN_UPDATE
+                if (currentState.currentPlayerId != result.playerId) {
+                    val eventMsg = GameEventMsg(
+                        event = "TURN_UPDATE",
+                        turnId = gameEngine.currentTurnId.value,
+                        activeBoxId = currentState.currentPlayerId,
+                        previousBoxId = result.playerId,
+                        previousResult = result.diceValue
+                    )
+                    wifiHostServer.sendMessage(eventMsg)
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Executes the move for a highlighted legal token on the Ludo board.
+     */
+    fun moveLudoToken(tokenId: Int): LudoMoveResult? {
+        val result = ludoGameEngine.moveToken(tokenId)
+        if (result != null) {
+            val summary = when {
+                result.isGameOver -> "🏆 Match Finished! Player ${result.playerId} wins!"
+                result.extraTurnGranted -> "Player ${result.playerId} moved token $tokenId to step ${result.toStep} and earned an EXTRA TURN (${result.extraTurnReason})! Roll again."
+                else -> "Player ${result.playerId} moved token $tokenId to step ${result.toStep}. Next turn: Player ${result.nextPlayerId}."
+            }
+            _uiAux.update { it.copy(lastRollSummary = summary) }
+            wifiHostServer.appendLog("Token moved: Player ${result.playerId} token $tokenId -> step ${result.toStep}. Next: Player ${result.nextPlayerId}")
+
+            // Also broadcast TURN_UPDATE
+            if (wifiHostServer.connectionState.value.isFullyConnected) {
+                val eventMsg = GameEventMsg(
+                    event = "TURN_UPDATE",
+                    turnId = gameEngine.currentTurnId.value,
+                    activeBoxId = result.nextPlayerId,
+                    previousBoxId = result.playerId,
+                    previousResult = result.diceValue
+                )
+                wifiHostServer.sendMessage(eventMsg)
+            }
+        }
+        return result
+    }
+
+    fun restartLudoRematch() {
+        val count = ludoGameEngine.gameState.value.playerCount
+        ludoGameEngine.initGame(count)
+        pendingNumberStore.clear()
+        _uiAux.update { it.copy(lastRollSummary = "New match started! Player 1's turn (tap dice to roll).") }
     }
 
     fun tapBox(boxId: Int) {
@@ -363,6 +491,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetToSetup() {
         gameEngine.resetToSetup()
+        ludoGameEngine.resetToSetup()
+        pendingNumberStore.clear()
         _uiAux.update { it.copy(lastRollSummary = "Game reset to Setup. Select player count and start new game.") }
         wifiHostServer.appendLog("Ludo game reset to Setup mode")
 
