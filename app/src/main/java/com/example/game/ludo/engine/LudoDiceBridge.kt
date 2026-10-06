@@ -58,32 +58,40 @@ class LudoDiceBridge(
         val currentPlayerId = state.currentPlayerId
         val pending = pendingStore.getPendingCommand(currentPlayerId)
 
-        val diceValue: Int
+        val rawDiceValue: Int
         val source: RollSource
         val commandId: String?
         val rawBoxId: String?
 
         if (pending != null) {
-            diceValue = pending.number
+            rawDiceValue = pending.number
             source = RollSource.REMOTE
             commandId = pending.commandId
             rawBoxId = pending.rawBoxId
         } else {
-            diceValue = secureRandom.nextInt(6) + 1
+            // Local roll: on 3rd consecutive roll (consecutiveSixCount >= 2), obtain 1..5 in background
+            rawDiceValue = if (state.consecutiveSixCount >= 2) {
+                secureRandom.nextInt(5) + 1
+            } else {
+                secureRandom.nextInt(6) + 1
+            }
             source = RollSource.LOCAL
             commandId = null
             rawBoxId = null
         }
 
-        val accepted = gameEngine.onDiceRolled(diceValue)
+        val accepted = gameEngine.onDiceRolled(rawDiceValue)
         if (accepted && pending != null) {
             // ONLY after engine acceptance: consume the pending command!
             pendingStore.consumePendingCommand(currentPlayerId)
         }
 
+        // The effective dice value accepted by the engine (e.g. if 3rd six was resolved to 1..5)
+        val finalDiceValue = gameEngine.gameState.value.diceValue ?: rawDiceValue
+
         return DiceActivationResult(
             playerId = currentPlayerId,
-            diceValue = diceValue,
+            diceValue = finalDiceValue,
             source = source,
             commandId = commandId,
             rawBoxId = rawBoxId,

@@ -8,6 +8,7 @@ import com.example.game.ludo.model.LudoPlayer
 import com.example.game.ludo.model.LudoToken
 import com.example.game.ludo.model.TokenState
 import com.example.game.ludo.model.TurnPhase
+import java.security.SecureRandom
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.update
  */
 class LudoGameEngine {
 
+    private val secureRandom = SecureRandom()
     private val _gameState = MutableStateFlow(LudoGameState())
     val gameState: StateFlow<LudoGameState> = _gameState.asStateFlow()
 
@@ -87,14 +89,21 @@ class LudoGameEngine {
     /**
      * Feeds an authoritative dice roll result into the engine.
      *
-     * In Phase 2 this is called directly by tests.
-     * In Phase 3 this will be supplied by PendingNumberStore or local random.
+     * Consecutive Six Rule:
+     * - 1st six -> consecutiveSixCount = 1, extra turn granted after moving.
+     * - 2nd six -> consecutiveSixCount = 2, extra turn granted after moving.
+     * - 3rd consecutive roll (when consecutiveSixCount >= 2):
+     *     A. If result = 1..5: Accepted normally, consecutiveSixCount resets to 0.
+     *     B. If result = 6: Third-six rule is applied! A 3rd consecutive 6 cannot appear as a
+     *        normal playable result. The engine safely obtains a 1..5 result in the background
+     *        for the SAME player without transferring the turn prematurely.
      *
      * @param diceValue Integer strictly 1..6.
+     * @param thirdRollFallback Optional fallback strictly 1..5 to use if a 3rd consecutive 6 is rolled (for deterministic testing).
      * @return true if roll was accepted and processed, false if not waiting for roll or invalid value.
      */
     @Synchronized
-    fun onDiceRolled(diceValue: Int): Boolean {
+    fun onDiceRolled(diceValue: Int, thirdRollFallback: Int? = null): Boolean {
         val current = _gameState.value
         if (!current.isGameStarted || current.isGameOver) return false
         if (current.turnPhase != TurnPhase.WAITING_FOR_DICE_ROLL) return false
@@ -102,32 +111,25 @@ class LudoGameEngine {
 
         val activePlayer = current.activePlayer ?: return false
 
-        // Consecutive Six Rule:
-        // 1st six -> consecutiveSixCount = 1
-        // 2nd consecutive six -> consecutiveSixCount = 2
-        // 3rd consecutive six -> Turn forfeited immediately!
-        if (diceValue == 6) {
+        // Apply third-six rule if player has already rolled two consecutive 6s
+        val effectiveDice = if (current.consecutiveSixCount >= 2 && diceValue == 6) {
+            // Third consecutive 6: safely obtain a valid 1..5 in the background for the SAME player
+            thirdRollFallback?.takeIf { it in 1..5 } ?: (secureRandom.nextInt(5) + 1)
+        } else {
+            diceValue
+        }
+
+        if (effectiveDice == 6) {
+            // Only 1st or 2nd consecutive six can reach here
             val newSixCount = current.consecutiveSixCount + 1
-            if (newSixCount >= 3) {
-                // 3rd consecutive six forfeits the turn!
-                val nextPlayerId = getNextActivePlayerId(current.currentPlayerId, current.players)
-                _gameState.value = current.copy(
-                    diceValue = diceValue,
-                    consecutiveSixCount = 0,
-                    currentPlayerId = nextPlayerId,
-                    turnPhase = TurnPhase.WAITING_FOR_DICE_ROLL,
-                    legalTokenIds = emptySet()
-                )
-                return true
-            }
 
             // Calculate legal moves for 1st or 2nd six
-            val legalTokens = MoveValidator.calculateLegalTokens(activePlayer, diceValue)
+            val legalTokens = MoveValidator.calculateLegalTokens(activePlayer, 6)
             if (legalTokens.isEmpty()) {
                 // No legal moves even on a 6: turn passes
                 val nextPlayerId = getNextActivePlayerId(current.currentPlayerId, current.players)
                 _gameState.value = current.copy(
-                    diceValue = diceValue,
+                    diceValue = 6,
                     consecutiveSixCount = 0,
                     currentPlayerId = nextPlayerId,
                     turnPhase = TurnPhase.WAITING_FOR_DICE_ROLL,
@@ -137,7 +139,7 @@ class LudoGameEngine {
             }
 
             _gameState.value = current.copy(
-                diceValue = diceValue,
+                diceValue = 6,
                 consecutiveSixCount = newSixCount,
                 turnPhase = TurnPhase.WAITING_FOR_TOKEN_SELECTION,
                 legalTokenIds = legalTokens
@@ -145,13 +147,14 @@ class LudoGameEngine {
             return true
         }
 
-        // Non-6 roll (1..5): resets consecutive six count
-        val legalTokens = MoveValidator.calculateLegalTokens(activePlayer, diceValue)
+        // Non-6 roll (1..5): either normal turn or 3rd consecutive roll result.
+        // Resets consecutive six count to 0.
+        val legalTokens = MoveValidator.calculateLegalTokens(activePlayer, effectiveDice)
         if (legalTokens.isEmpty()) {
             // No legal moves: turn passes immediately to next player
             val nextPlayerId = getNextActivePlayerId(current.currentPlayerId, current.players)
             _gameState.value = current.copy(
-                diceValue = diceValue,
+                diceValue = effectiveDice,
                 consecutiveSixCount = 0,
                 currentPlayerId = nextPlayerId,
                 turnPhase = TurnPhase.WAITING_FOR_DICE_ROLL,
@@ -161,7 +164,7 @@ class LudoGameEngine {
         }
 
         _gameState.value = current.copy(
-            diceValue = diceValue,
+            diceValue = effectiveDice,
             consecutiveSixCount = 0,
             turnPhase = TurnPhase.WAITING_FOR_TOKEN_SELECTION,
             legalTokenIds = legalTokens

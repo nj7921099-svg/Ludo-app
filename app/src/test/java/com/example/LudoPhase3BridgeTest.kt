@@ -89,10 +89,12 @@ class LudoPhase3BridgeTest {
         store.queueCommand("req-b4", 4, 6, "B4")
         store.queueCommand("req-b2", 2, 3, "B2")
 
-        // Advance turn to Player 2 (P1 rolls 1, no moves in base, turn moves to P2)
-        val p1Roll = bridge.onDiceActivated() // P1 has no pending -> local random
+        // Advance turn to Player 2 (P1 rolls 1, all tokens in base, turn moves to P2)
+        store.queueCommand("req-b1", 1, 1, "B1")
+        val p1Roll = bridge.onDiceActivated()
         assertNotNull(p1Roll)
-        assertEquals(RollSource.LOCAL, p1Roll!!.source)
+        assertEquals(RollSource.REMOTE, p1Roll!!.source)
+        assertEquals(1, p1Roll.diceValue)
 
         // Now active turn is Player 2
         assertEquals(2, engine.gameState.value.currentPlayerId)
@@ -279,5 +281,159 @@ class LudoPhase3BridgeTest {
         val validB3 = BoxIdParser.parse("B3")
         assertTrue(validB3 is BoxIdParseResult.Valid)
         assertEquals(3, (validB3 as BoxIdParseResult.Valid).boxNumber)
+    }
+
+    // =========================================================================
+    // Test 18: Consecutive rolls 6, 6, 6 via Controller - third-six rule keeps same player
+    // =========================================================================
+
+    @Test
+    fun `test 18 - controller rolls 6, 6, 6 - third roll triggers third-six rule and keeps same player`() {
+        val engine = LudoGameEngine()
+        engine.initGame(4)
+        val store = PendingNumberStore()
+        val bridge = LudoDiceBridge(engine, store)
+
+        // Queue B1 -> 6
+        store.queueCommand("req-1", 1, 6, "B1")
+        val roll1 = bridge.onDiceActivated()
+        assertNotNull(roll1)
+        assertEquals(6, roll1!!.diceValue)
+        assertEquals(RollSource.REMOTE, roll1.source)
+        assertEquals("req-1", roll1.commandId)
+
+        // Player 1 moves token 0 to step 1 -> extra turn
+        engine.moveToken(0)
+        assertEquals(1, engine.gameState.value.currentPlayerId)
+        assertEquals(1, engine.gameState.value.consecutiveSixCount)
+
+        // Queue B1 -> 6 (second consecutive 6)
+        store.queueCommand("req-2", 1, 6, "B1")
+        val roll2 = bridge.onDiceActivated()
+        assertNotNull(roll2)
+        assertEquals(6, roll2!!.diceValue)
+        assertEquals("req-2", roll2.commandId)
+
+        // Player 1 moves token 1 to step 1 -> extra turn (3rd roll!)
+        engine.moveToken(1)
+        assertEquals(1, engine.gameState.value.currentPlayerId)
+        assertEquals(2, engine.gameState.value.consecutiveSixCount)
+
+        // Controller sends 6 for third roll
+        store.queueCommand("req-3", 1, 6, "B1")
+        val roll3 = bridge.onDiceActivated()
+        assertNotNull(roll3)
+        assertEquals("req-3", roll3!!.commandId)
+        assertEquals(RollSource.REMOTE, roll3.source)
+        assertTrue("Third roll value must be in 1..5 due to third-six rule", roll3.diceValue in 1..5)
+        assertEquals("Player 1 must remain active on third roll", 1, engine.gameState.value.currentPlayerId)
+        assertEquals(TurnPhase.WAITING_FOR_TOKEN_SELECTION, engine.gameState.value.turnPhase)
+        assertEquals("consecutiveSixCount must be reset to 0", 0, engine.gameState.value.consecutiveSixCount)
+        assertTrue("Command req-3 must be consumed", store.isCommandConsumed("req-3"))
+
+        // Player 1 moves token 0 by the resolved 1..5 value
+        val move3 = engine.moveToken(0)
+        assertNotNull(move3)
+        assertFalse(move3!!.extraTurnGranted)
+        assertEquals("Turn must advance to Player 2 after third roll move", 2, engine.gameState.value.currentPlayerId)
+    }
+
+    // =========================================================================
+    // Test 19: Consecutive rolls 6, 6, 3 via Controller - third roll 3 is accepted normally
+    // =========================================================================
+
+    @Test
+    fun `test 19 - controller rolls 6, 6, 3 - third roll 3 is accepted normally`() {
+        val engine = LudoGameEngine()
+        engine.initGame(4)
+        val store = PendingNumberStore()
+        val bridge = LudoDiceBridge(engine, store)
+
+        // Roll 1: 6
+        store.queueCommand("req-1", 1, 6, "B1")
+        bridge.onDiceActivated()
+        engine.moveToken(0)
+
+        // Roll 2: 6
+        store.queueCommand("req-2", 1, 6, "B1")
+        bridge.onDiceActivated()
+        engine.moveToken(1)
+
+        // Roll 3: 3
+        store.queueCommand("req-3", 1, 3, "B1")
+        val roll3 = bridge.onDiceActivated()
+        assertNotNull(roll3)
+        assertEquals(3, roll3!!.diceValue)
+        assertEquals("req-3", roll3.commandId)
+        assertEquals(1, engine.gameState.value.currentPlayerId)
+        assertEquals(0, engine.gameState.value.consecutiveSixCount)
+
+        // Move token
+        val move3 = engine.moveToken(0)
+        assertNotNull(move3)
+        assertEquals(4, move3!!.toStep) // 1 + 3
+        assertEquals(2, engine.gameState.value.currentPlayerId)
+    }
+
+    // =========================================================================
+    // Test 20: Third roll local fallback rolls in 1..5
+    // =========================================================================
+
+    @Test
+    fun `test 20 - third roll local fallback rolls in 1 to 5 safely`() {
+        val engine = LudoGameEngine()
+        engine.initGame(4)
+        val store = PendingNumberStore()
+        val bridge = LudoDiceBridge(engine, store)
+
+        // Roll 1: 6
+        store.queueCommand("req-1", 1, 6, "B1")
+        bridge.onDiceActivated()
+        engine.moveToken(0)
+
+        // Roll 2: 6
+        store.queueCommand("req-2", 1, 6, "B1")
+        bridge.onDiceActivated()
+        engine.moveToken(1)
+
+        // Roll 3: No controller command -> local fallback
+        val roll3 = bridge.onDiceActivated()
+        assertNotNull(roll3)
+        assertEquals(RollSource.LOCAL, roll3!!.source)
+        assertTrue("Local fallback on third roll must be 1..5", roll3.diceValue in 1..5)
+        assertEquals("Player 1 remains active", 1, engine.gameState.value.currentPlayerId)
+        assertEquals(0, engine.gameState.value.consecutiveSixCount)
+    }
+
+    // =========================================================================
+    // Test 21: Wrong player's pending command is never consumed during third-roll sequence
+    // =========================================================================
+
+    @Test
+    fun `test 21 - wrong player pending command is never consumed during third-roll sequence`() {
+        val engine = LudoGameEngine()
+        engine.initGame(4)
+        val store = PendingNumberStore()
+        val bridge = LudoDiceBridge(engine, store)
+
+        // Player 2 has a pending 4
+        store.queueCommand("p2-cmd", 2, 4, "B2")
+
+        // Player 1 rolls 6, 6, 6
+        store.queueCommand("p1-1", 1, 6, "B1")
+        bridge.onDiceActivated()
+        engine.moveToken(0)
+
+        store.queueCommand("p1-2", 1, 6, "B1")
+        bridge.onDiceActivated()
+        engine.moveToken(1)
+
+        store.queueCommand("p1-3", 1, 6, "B1")
+        bridge.onDiceActivated()
+
+        // Verify Player 2's pending command is completely untouched!
+        assertEquals(4, store.getPendingCommand(2)?.number)
+        assertEquals("p2-cmd", store.getPendingCommand(2)?.commandId)
+        assertFalse(store.isCommandConsumed("p2-cmd"))
     }
 }

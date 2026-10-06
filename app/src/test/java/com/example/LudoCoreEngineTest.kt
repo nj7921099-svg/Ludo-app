@@ -333,7 +333,7 @@ class LudoCoreEngineTest {
     // =========================================================================
 
     @Test
-    fun `test H1 - third consecutive six forfeits the turn`() {
+    fun `test H1 - third consecutive roll with 6 triggers third-six rule and keeps same player`() {
         val engine = LudoGameEngine()
         engine.initGame(4)
 
@@ -349,11 +349,82 @@ class LudoCoreEngineTest {
         assertEquals(1, engine.gameState.value.currentPlayerId)
         assertEquals(2, engine.gameState.value.consecutiveSixCount)
 
-        // Third 6 -> turn forfeited immediately, passes to Player 2!
-        assertTrue(engine.onDiceRolled(6))
+        // Third roll with 6 -> does NOT forfeit turn or transfer prematurely!
+        // Third-six rule obtains a 1..5 in the background (using fallback = 4 for deterministic test)
+        assertTrue(engine.onDiceRolled(6, thirdRollFallback = 4))
+        val state = engine.gameState.value
+        assertEquals("Player 1 must remain active on third roll", 1, state.currentPlayerId)
+        assertEquals("Dice value must be resolved to 1..5", 4, state.diceValue)
+        assertEquals("Consecutive six count must reset to 0", 0, state.consecutiveSixCount)
+        assertEquals("Must be waiting for token selection", TurnPhase.WAITING_FOR_TOKEN_SELECTION, state.turnPhase)
+        assertTrue("Token 0 must be legal to move", state.legalTokenIds.contains(0))
+
+        // Moving token moves 4 steps, and since dice was not 6, turn advances to Player 2
+        val moveRes = engine.moveToken(0)
+        assertNotNull(moveRes)
+        assertEquals(5, moveRes!!.toStep)
+        assertFalse(moveRes.extraTurnGranted)
         assertEquals(2, engine.gameState.value.currentPlayerId)
-        assertEquals(0, engine.gameState.value.consecutiveSixCount)
         assertEquals(TurnPhase.WAITING_FOR_DICE_ROLL, engine.gameState.value.turnPhase)
+    }
+
+    @Test
+    fun `test H2 - third consecutive roll with 1 to 5 is accepted normally`() {
+        for (v in 1..5) {
+            val engine = LudoGameEngine()
+            engine.initGame(4)
+
+            // Roll 1: 6
+            engine.onDiceRolled(6)
+            engine.moveToken(0)
+            assertEquals(1, engine.gameState.value.currentPlayerId)
+            assertEquals(1, engine.gameState.value.consecutiveSixCount)
+
+            // Roll 2: 6
+            engine.onDiceRolled(6)
+            engine.moveToken(1)
+            assertEquals(1, engine.gameState.value.currentPlayerId)
+            assertEquals(2, engine.gameState.value.consecutiveSixCount)
+
+            // Roll 3: v in 1..5
+            assertTrue(engine.onDiceRolled(v))
+            val state = engine.gameState.value
+            assertEquals("Same player must receive third roll", 1, state.currentPlayerId)
+            assertEquals("Dice value must be $v", v, state.diceValue)
+            assertEquals("Consecutive six count must reset to 0", 0, state.consecutiveSixCount)
+            assertEquals(TurnPhase.WAITING_FOR_TOKEN_SELECTION, state.turnPhase)
+
+            // Move token
+            val moveRes = engine.moveToken(0)
+            assertNotNull(moveRes)
+            assertEquals(1 + v, moveRes!!.toStep)
+            assertFalse(moveRes.extraTurnGranted)
+            assertEquals(2, engine.gameState.value.currentPlayerId)
+        }
+    }
+
+    @Test
+    fun `test H3 - third consecutive roll sequence 6, 6, 6 with random fallback`() {
+        val engine = LudoGameEngine()
+        engine.initGame(4)
+
+        // 1st 6
+        engine.onDiceRolled(6)
+        engine.moveToken(0)
+        assertEquals(1, engine.gameState.value.consecutiveSixCount)
+
+        // 2nd 6
+        engine.onDiceRolled(6)
+        engine.moveToken(1)
+        assertEquals(2, engine.gameState.value.consecutiveSixCount)
+
+        // 3rd 6 (without explicit fallback, relies on background safe resolution in 1..5)
+        assertTrue(engine.onDiceRolled(6))
+        val state = engine.gameState.value
+        assertEquals("Player 1 remains active on third roll", 1, state.currentPlayerId)
+        assertTrue("Dice value must be between 1 and 5", state.diceValue in 1..5)
+        assertEquals("Consecutive six count resets to 0", 0, state.consecutiveSixCount)
+        assertEquals(TurnPhase.WAITING_FOR_TOKEN_SELECTION, state.turnPhase)
     }
 
     // =========================================================================
