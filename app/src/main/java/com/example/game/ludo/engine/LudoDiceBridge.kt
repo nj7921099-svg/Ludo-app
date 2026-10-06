@@ -69,12 +69,7 @@ class LudoDiceBridge(
             commandId = pending.commandId
             rawBoxId = pending.rawBoxId
         } else {
-            // Local roll: on 3rd consecutive roll (consecutiveSixCount >= 2), obtain 1..5 in background
-            rawDiceValue = if (state.consecutiveSixCount >= 2) {
-                secureRandom.nextInt(5) + 1
-            } else {
-                secureRandom.nextInt(6) + 1
-            }
+            rawDiceValue = secureRandom.nextInt(6) + 1
             source = RollSource.LOCAL
             commandId = null
             rawBoxId = null

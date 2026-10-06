@@ -275,6 +275,7 @@ fun MainScreen(
                                 LudoGameBoard(
                                     gameState = uiState.ludoGameState,
                                     pendingCommands = uiState.pendingNumbers,
+                                    isMoveLocked = uiState.isInputLocked,
                                     onDiceClick = {
                                         viewModel.activateLudoDice()
                                     },

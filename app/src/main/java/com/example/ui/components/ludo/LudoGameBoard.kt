@@ -66,7 +66,8 @@ fun LudoGameBoard(
     onTokenClick: (Int) -> Unit,
     onNewGame: () -> Unit,
     onBackToSetup: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isMoveLocked: Boolean = false
 ) {
     val activePlayer = gameState.activePlayer
     val hasPendingForActive = pendingCommands.containsKey(gameState.currentPlayerId)
@@ -120,6 +121,8 @@ fun LudoGameBoard(
                         cellSizePx = cellSizePx
                     )
 
+                    val isClickable = item.isLegal && !isMoveLocked
+
                     Box(
                         modifier = Modifier
                             .offset { IntOffset(offsetX.toInt(), offsetY.toInt()) }
@@ -129,9 +132,9 @@ fun LudoGameBoard(
                         LudoTokenComposable(
                             color = item.player.color,
                             tokenId = item.token.tokenId,
-                            isLegalToMove = item.isLegal,
+                            isLegalToMove = isClickable,
                             onClick = {
-                                if (item.isLegal) {
+                                if (isClickable) {
                                     onTokenClick(item.token.tokenId)
                                 }
                             },
@@ -150,7 +153,8 @@ fun LudoGameBoard(
                 diceValue = gameState.diceValue,
                 turnPhase = gameState.turnPhase,
                 activeColor = activePlayer.color,
-                onDiceClick = onDiceClick
+                onDiceClick = onDiceClick,
+                isMoveLocked = isMoveLocked
             )
         }
 

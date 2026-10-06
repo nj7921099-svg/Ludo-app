@@ -56,9 +56,10 @@ fun LudoDiceControl(
     activeColor: LudoColor,
     onDiceClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isMoveLocked: Boolean = false,
     size: Dp = 68.dp
 ) {
-    val isRollable = turnPhase == TurnPhase.WAITING_FOR_DICE_ROLL
+    val isRollable = (turnPhase == TurnPhase.WAITING_FOR_DICE_ROLL) && !isMoveLocked
     val primaryColor = LudoThemeColors.getPrimaryColor(activeColor)
     val glowColor = LudoThemeColors.getGlowColor(activeColor)
 

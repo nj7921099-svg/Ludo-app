@@ -353,6 +353,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Uses PendingNumberStore if a controller command was sent for this player, otherwise local random.
      */
     fun activateLudoDice(): DiceActivationResult? {
+        if (_uiAux.value.isInputLocked) return null
         val result = ludoDiceBridge.onDiceActivated()
         if (result != null) {
             val currentState = ludoGameEngine.gameState.value
@@ -405,9 +406,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Executes the move for a highlighted legal token on the Ludo board.
+     * Prevents duplicate/stale taps via isInputLocked lock.
      */
     fun moveLudoToken(tokenId: Int): LudoMoveResult? {
-        val result = ludoGameEngine.moveToken(tokenId)
+        if (_uiAux.value.isInputLocked) return null
+
+        // Lock input to prevent duplicate or conflicting taps while processing
+        _uiAux.update { it.copy(isInputLocked = true) }
+
+        val result = try {
+            ludoGameEngine.moveToken(tokenId)
+        } finally {
+            _uiAux.update { it.copy(isInputLocked = false) }
+        }
+
         if (result != null) {
             val summary = when {
                 result.isGameOver -> "🏆 Match Finished! Player ${result.playerId} wins!"
