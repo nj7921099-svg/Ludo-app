@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -18,7 +19,7 @@ import com.example.game.ludo.model.LudoColor
 
 /**
  * Pure Canvas rendering of the canonical 15x15 Ludo board.
- * Renders all bases, common tracks, safe cells, home runways, and center finish triangles.
+ * Renders all bases, common tracks, safe cells with golden stars, home runways, and center finish triangles.
  */
 @Composable
 fun LudoBoardCanvas(
@@ -28,7 +29,7 @@ fun LudoBoardCanvas(
         val boardWidth = size.width
         val cellSize = boardWidth / 15f
 
-        // 1. Board background
+        // 1. Board background with subtle radial depth
         drawRect(
             color = LudoThemeColors.BoardBg,
             size = size
@@ -72,7 +73,8 @@ fun LudoBoardCanvas(
                 coord = coord,
                 cellSize = cellSize,
                 isSafe = isSafe,
-                startColor = startColor
+                startColor = startColor,
+                isStartCell = isStart
             )
         }
 
@@ -81,43 +83,52 @@ fun LudoBoardCanvas(
             val lane = LudoBoardCoordinates.homeLanes[color] ?: return@forEach
             val laneColor = LudoThemeColors.getPrimaryColor(color)
             val darkColor = LudoThemeColors.getDarkColor(color)
+            val lightColor = LudoThemeColors.getLightColor(color)
 
             lane.forEachIndexed { stepIdx, coord ->
                 val x = coord.col * cellSize
                 val y = coord.row * cellSize
-                val padding = cellSize * 0.08f
+                val padding = cellSize * 0.07f
 
+                // Outer tile border
                 drawRoundRect(
                     color = darkColor,
                     topLeft = Offset(x + padding, y + padding),
                     size = Size(cellSize - padding * 2, cellSize - padding * 2),
-                    cornerRadius = CornerRadius(cellSize * 0.2f, cellSize * 0.2f)
+                    cornerRadius = CornerRadius(cellSize * 0.22f, cellSize * 0.22f)
                 )
 
+                // Colored runway fill
                 drawRoundRect(
-                    color = laneColor.copy(alpha = 0.85f),
-                    topLeft = Offset(x + padding * 1.5f, y + padding * 1.5f),
-                    size = Size(cellSize - padding * 3, cellSize - padding * 3),
-                    cornerRadius = CornerRadius(cellSize * 0.15f, cellSize * 0.15f)
+                    brush = Brush.linearGradient(
+                        colors = listOf(laneColor, laneColor.copy(alpha = 0.82f)),
+                        start = Offset(x, y),
+                        end = Offset(x + cellSize, y + cellSize)
+                    ),
+                    topLeft = Offset(x + padding * 1.4f, y + padding * 1.4f),
+                    size = Size(cellSize - padding * 2.8f, cellSize - padding * 2.8f),
+                    cornerRadius = CornerRadius(cellSize * 0.18f, cellSize * 0.18f)
                 )
 
-                // White runway arrow/circle
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.5f),
-                    radius = cellSize * 0.14f,
-                    center = Offset(x + cellSize / 2f, y + cellSize / 2f)
+                // Directional runway arrow pointing inward
+                drawRunwayArrow(
+                    color = color,
+                    center = Offset(x + cellSize / 2f, y + cellSize / 2f),
+                    cellSize = cellSize
                 )
             }
         }
 
-        // 5. Draw Center 3x3 Home Triangle
+        // 5. Draw Center 3x3 Home Triangle with Finish Podium
         drawCenterHome(cellSize = cellSize)
 
-        // 6. Draw outer board border
-        drawRect(
+        // 6. Outer board border frame
+        drawRoundRect(
             color = LudoThemeColors.TrackCellBorder,
-            style = Stroke(width = cellSize * 0.1f),
-            size = size
+            topLeft = Offset.Zero,
+            size = size,
+            cornerRadius = CornerRadius(cellSize * 0.4f, cellSize * 0.4f),
+            style = Stroke(width = cellSize * 0.08f)
         )
     }
 }
@@ -133,55 +144,89 @@ private fun DrawScope.drawCornerBase(
     val baseSize = 6 * cellSize
     val primaryColor = LudoThemeColors.getPrimaryColor(color)
     val darkColor = LudoThemeColors.getDarkColor(color)
+    val lightColor = LudoThemeColors.getLightColor(color)
 
     // Outer base container with rounded corner
-    val margin = cellSize * 0.15f
+    val margin = cellSize * 0.14f
     drawRoundRect(
         color = darkColor,
         topLeft = Offset(x + margin, y + margin),
         size = Size(baseSize - margin * 2, baseSize - margin * 2),
-        cornerRadius = CornerRadius(cellSize * 0.6f, cellSize * 0.6f)
+        cornerRadius = CornerRadius(cellSize * 0.55f, cellSize * 0.55f)
     )
 
+    // Vibrant border outline
     drawRoundRect(
-        color = primaryColor.copy(alpha = 0.6f),
+        color = primaryColor.copy(alpha = 0.75f),
         topLeft = Offset(x + margin, y + margin),
         size = Size(baseSize - margin * 2, baseSize - margin * 2),
-        cornerRadius = CornerRadius(cellSize * 0.6f, cellSize * 0.6f),
-        style = Stroke(width = 2.5f)
+        cornerRadius = CornerRadius(cellSize * 0.55f, cellSize * 0.55f),
+        style = Stroke(width = 3.0f)
     )
 
-    // Inner white container
-    val innerMargin = cellSize * 0.75f
+    // Inner dark container
+    val innerMargin = cellSize * 0.72f
     val innerSize = baseSize - innerMargin * 2
     drawRoundRect(
-        color = Color(0xFF0F0C1E),
+        color = Color(0xFF0D0A1C),
         topLeft = Offset(x + innerMargin, y + innerMargin),
         size = Size(innerSize, innerSize),
-        cornerRadius = CornerRadius(cellSize * 0.45f, cellSize * 0.45f)
+        cornerRadius = CornerRadius(cellSize * 0.42f, cellSize * 0.42f)
     )
 
-    // 4 base circles for pawns
+    drawRoundRect(
+        color = primaryColor.copy(alpha = 0.35f),
+        topLeft = Offset(x + innerMargin, y + innerMargin),
+        size = Size(innerSize, innerSize),
+        cornerRadius = CornerRadius(cellSize * 0.42f, cellSize * 0.42f),
+        style = Stroke(width = 1.5f)
+    )
+
+    // 4 base circles for pawns (slots)
     val slots = LudoBoardCoordinates.baseSlots[color] ?: emptyList()
     slots.forEach { slot ->
         val cx = slot.col * cellSize + cellSize / 2f
         val cy = slot.row * cellSize + cellSize / 2f
-        val radius = cellSize * 0.55f
+        val radius = cellSize * 0.58f
 
+        // Ambient shadow
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.4f),
+            radius = radius * 1.05f,
+            center = Offset(cx, cy + 2f)
+        )
+
+        // Outer base slot ring
         drawCircle(
             color = darkColor,
             radius = radius,
             center = Offset(cx, cy)
         )
+
+        // Inner glowing pod ring
         drawCircle(
-            color = primaryColor,
-            radius = radius * 0.85f,
+            brush = Brush.radialGradient(
+                colors = listOf(primaryColor, darkColor),
+                center = Offset(cx - radius * 0.2f, cy - radius * 0.2f),
+                radius = radius
+            ),
+            radius = radius * 0.88f,
             center = Offset(cx, cy)
         )
+
+        // Metallic inner rim
         drawCircle(
-            color = Color.White.copy(alpha = 0.4f),
-            radius = radius * 0.4f,
-            center = Offset(cx, cy)
+            color = Color.White.copy(alpha = 0.45f),
+            radius = radius * 0.42f,
+            center = Offset(cx, cy),
+            style = Stroke(width = 1.5f)
+        )
+
+        // Specular dot
+        drawCircle(
+            color = Color.White.copy(alpha = 0.7f),
+            radius = radius * 0.16f,
+            center = Offset(cx - radius * 0.22f, cy - radius * 0.22f)
         )
     }
 }
@@ -190,11 +235,12 @@ private fun DrawScope.drawTrackCell(
     coord: BoardCoordinate,
     cellSize: Float,
     isSafe: Boolean,
-    startColor: LudoColor?
+    startColor: LudoColor?,
+    isStartCell: Boolean
 ) {
     val x = coord.col * cellSize
     val y = coord.row * cellSize
-    val pad = cellSize * 0.06f
+    val pad = cellSize * 0.055f
     val cellWidth = cellSize - pad * 2
 
     val cellBg = if (startColor != null) {
@@ -203,15 +249,16 @@ private fun DrawScope.drawTrackCell(
         LudoThemeColors.TrackCellBg
     }
 
+    // Cell base rectangle
     drawRoundRect(
         color = cellBg,
         topLeft = Offset(x + pad, y + pad),
         size = Size(cellWidth, cellWidth),
-        cornerRadius = CornerRadius(cellSize * 0.15f, cellSize * 0.15f)
+        cornerRadius = CornerRadius(cellSize * 0.18f, cellSize * 0.18f)
     )
 
     val borderColor = if (startColor != null) {
-        LudoThemeColors.getPrimaryColor(startColor).copy(alpha = 0.7f)
+        LudoThemeColors.getPrimaryColor(startColor).copy(alpha = 0.85f)
     } else {
         LudoThemeColors.TrackCellBorder
     }
@@ -220,21 +267,127 @@ private fun DrawScope.drawTrackCell(
         color = borderColor,
         topLeft = Offset(x + pad, y + pad),
         size = Size(cellWidth, cellWidth),
-        cornerRadius = CornerRadius(cellSize * 0.15f, cellSize * 0.15f),
-        style = Stroke(width = 1.2f)
+        cornerRadius = CornerRadius(cellSize * 0.18f, cellSize * 0.18f),
+        style = Stroke(width = if (startColor != null) 1.8f else 1.2f)
     )
 
-    // Draw Golden Star for safe cells
+    val cx = x + cellSize / 2f
+    val cy = y + cellSize / 2f
+
+    // Draw Golden Star for safe cells (xpstar style)
     if (isSafe) {
-        val cx = x + cellSize / 2f
-        val cy = y + cellSize / 2f
-        val starRadius = cellSize * 0.32f
+        val starRadius = cellSize * 0.34f
+        val starColor = if (startColor != null) {
+            LudoThemeColors.getPrimaryColor(startColor)
+        } else {
+            LudoThemeColors.SafeStarColor
+        }
+
+        // Soft star glow behind
+        drawCircle(
+            color = starColor.copy(alpha = 0.25f),
+            radius = starRadius * 1.25f,
+            center = Offset(cx, cy)
+        )
+
         drawStar(
             center = Offset(cx, cy),
             radius = starRadius,
-            color = if (startColor != null) LudoThemeColors.getPrimaryColor(startColor) else LudoThemeColors.SafeStarColor
+            color = starColor
+        )
+
+        // Inner star highlight core
+        drawStar(
+            center = Offset(cx, cy),
+            radius = starRadius * 0.45f,
+            color = Color.White.copy(alpha = 0.7f)
         )
     }
+
+    // Start arrow on entry tiles
+    if (isStartCell && startColor != null) {
+        drawStartArrow(
+            color = startColor,
+            center = Offset(cx, cy),
+            cellSize = cellSize
+        )
+    }
+}
+
+private fun DrawScope.drawRunwayArrow(color: LudoColor, center: Offset, cellSize: Float) {
+    val arrowSize = cellSize * 0.22f
+    val path = Path()
+
+    when (color) {
+        LudoColor.RED -> {
+            // Point right
+            path.moveTo(center.x - arrowSize * 0.6f, center.y - arrowSize * 0.8f)
+            path.lineTo(center.x + arrowSize * 0.6f, center.y)
+            path.lineTo(center.x - arrowSize * 0.6f, center.y + arrowSize * 0.8f)
+        }
+        LudoColor.GREEN -> {
+            // Point down
+            path.moveTo(center.x - arrowSize * 0.8f, center.y - arrowSize * 0.6f)
+            path.lineTo(center.x, center.y + arrowSize * 0.6f)
+            path.lineTo(center.x + arrowSize * 0.8f, center.y - arrowSize * 0.6f)
+        }
+        LudoColor.YELLOW -> {
+            // Point left
+            path.moveTo(center.x + arrowSize * 0.6f, center.y - arrowSize * 0.8f)
+            path.lineTo(center.x - arrowSize * 0.6f, center.y)
+            path.lineTo(center.x + arrowSize * 0.6f, center.y + arrowSize * 0.8f)
+        }
+        LudoColor.BLUE -> {
+            // Point up
+            path.moveTo(center.x - arrowSize * 0.8f, center.y + arrowSize * 0.6f)
+            path.lineTo(center.x, center.y - arrowSize * 0.6f)
+            path.lineTo(center.x + arrowSize * 0.8f, center.y + arrowSize * 0.6f)
+        }
+    }
+
+    drawPath(
+        path = path,
+        color = Color.White.copy(alpha = 0.55f),
+        style = Stroke(width = 2.2f)
+    )
+}
+
+private fun DrawScope.drawStartArrow(color: LudoColor, center: Offset, cellSize: Float) {
+    val size = cellSize * 0.18f
+    val path = Path()
+
+    when (color) {
+        LudoColor.RED -> {
+            // Moves right
+            path.moveTo(center.x - size, center.y - size)
+            path.lineTo(center.x + size, center.y)
+            path.lineTo(center.x - size, center.y + size)
+        }
+        LudoColor.GREEN -> {
+            // Moves down
+            path.moveTo(center.x - size, center.y - size)
+            path.lineTo(center.x, center.y + size)
+            path.lineTo(center.x + size, center.y - size)
+        }
+        LudoColor.YELLOW -> {
+            // Moves left
+            path.moveTo(center.x + size, center.y - size)
+            path.lineTo(center.x - size, center.y)
+            path.lineTo(center.x + size, center.y + size)
+        }
+        LudoColor.BLUE -> {
+            // Moves up
+            path.moveTo(center.x - size, center.y + size)
+            path.lineTo(center.x, center.y - size)
+            path.lineTo(center.x + size, center.y + size)
+        }
+    }
+
+    drawPath(
+        path = path,
+        color = Color.White.copy(alpha = 0.85f),
+        style = Stroke(width = 2.0f)
+    )
 }
 
 private fun DrawScope.drawCenterHome(cellSize: Float) {
@@ -260,7 +413,15 @@ private fun DrawScope.drawCenterHome(cellSize: Float) {
         lineTo(left, bottom)
         close()
     }
-    drawPath(redPath, LudoThemeColors.RedPrimary.copy(alpha = 0.85f), style = Fill)
+    drawPath(
+        redPath,
+        brush = Brush.radialGradient(
+            colors = listOf(LudoThemeColors.RedPrimary, LudoThemeColors.RedDark),
+            center = Offset(left, cy),
+            radius = 2.5f * cellSize
+        ),
+        style = Fill
+    )
 
     // Green triangle (Top)
     val greenPath = Path().apply {
@@ -269,7 +430,15 @@ private fun DrawScope.drawCenterHome(cellSize: Float) {
         lineTo(right, top)
         close()
     }
-    drawPath(greenPath, LudoThemeColors.GreenPrimary.copy(alpha = 0.85f), style = Fill)
+    drawPath(
+        greenPath,
+        brush = Brush.radialGradient(
+            colors = listOf(LudoThemeColors.GreenPrimary, LudoThemeColors.GreenDark),
+            center = Offset(cx, top),
+            radius = 2.5f * cellSize
+        ),
+        style = Fill
+    )
 
     // Yellow triangle (Right)
     val yellowPath = Path().apply {
@@ -278,7 +447,15 @@ private fun DrawScope.drawCenterHome(cellSize: Float) {
         lineTo(right, bottom)
         close()
     }
-    drawPath(yellowPath, LudoThemeColors.YellowPrimary.copy(alpha = 0.85f), style = Fill)
+    drawPath(
+        yellowPath,
+        brush = Brush.radialGradient(
+            colors = listOf(LudoThemeColors.YellowPrimary, LudoThemeColors.YellowDark),
+            center = Offset(right, cy),
+            radius = 2.5f * cellSize
+        ),
+        style = Fill
+    )
 
     // Blue triangle (Bottom)
     val bluePath = Path().apply {
@@ -287,18 +464,43 @@ private fun DrawScope.drawCenterHome(cellSize: Float) {
         lineTo(right, bottom)
         close()
     }
-    drawPath(bluePath, LudoThemeColors.BluePrimary.copy(alpha = 0.85f), style = Fill)
+    drawPath(
+        bluePath,
+        brush = Brush.radialGradient(
+            colors = listOf(LudoThemeColors.BluePrimary, LudoThemeColors.BlueDark),
+            center = Offset(cx, bottom),
+            radius = 2.5f * cellSize
+        ),
+        style = Fill
+    )
 
     // Center divider lines
     val strokeColor = LudoThemeColors.TrackCellBorder
-    drawLine(strokeColor, Offset(left, top), Offset(right, bottom), strokeWidth = 2f)
-    drawLine(strokeColor, Offset(right, top), Offset(left, bottom), strokeWidth = 2f)
+    drawLine(strokeColor, Offset(left, top), Offset(right, bottom), strokeWidth = 2.5f)
+    drawLine(strokeColor, Offset(right, top), Offset(left, bottom), strokeWidth = 2.5f)
 
-    // Center trophy star
+    // Center finish crown/star emblem
+    drawCircle(
+        color = Color(0xFF140E28),
+        radius = cellSize * 0.65f,
+        center = Offset(cx, cy)
+    )
+    drawCircle(
+        color = Color(0xFFFFD700),
+        radius = cellSize * 0.65f,
+        center = Offset(cx, cy),
+        style = Stroke(width = 2.0f)
+    )
+
     drawStar(
         center = Offset(cx, cy),
-        radius = cellSize * 0.45f,
+        radius = cellSize * 0.42f,
         color = Color(0xFFFFD700)
+    )
+    drawStar(
+        center = Offset(cx, cy),
+        radius = cellSize * 0.18f,
+        color = Color.White
     )
 }
 
@@ -323,3 +525,4 @@ private fun DrawScope.drawStar(center: Offset, radius: Float, color: Color) {
     path.close()
     drawPath(path, color, style = Fill)
 }
+

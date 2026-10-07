@@ -27,11 +27,14 @@ object LudoThemeColors {
     val BlueLight = Color(0xFF93C5FD)
     val BlueGlow = Color(0xFF60A5FA)
 
-    val TrackCellBg = Color(0xFF151224)
-    val TrackCellBorder = Color(0xFF2D264A)
+    val TrackCellBg = Color(0xFF131022)
+    val TrackCellBorder = Color(0xFF2E264E)
     val SafeStarColor = Color(0xFFFFD700)
+    val SafeStarGlow = Color(0xFFFFE57F)
     val BoardBg = Color(0xFF0A0815)
-    val CenterHomeBg = Color(0xFF1B1630)
+    val CenterHomeBg = Color(0xFF18132C)
+    val GoldCrown = Color(0xFFFFD700)
+    val GoldCrownLight = Color(0xFFFFF3B0)
 
     fun getPrimaryColor(color: LudoColor): Color = when (color) {
         LudoColor.RED -> RedPrimary
@@ -61,3 +64,4 @@ object LudoThemeColors {
         LudoColor.BLUE -> BlueGlow
     }
 }
+
