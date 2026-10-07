@@ -153,38 +153,41 @@ fun LudoGameBoard(
         // Execute animated movement sequence if a move was detected
         if (movedPlayer != null && movedToken != null) {
             val key = Pair(movedPlayer!!.playerId, movedToken!!.tokenId)
-            isAnimationActive = true
+            try {
+                isAnimationActive = true
 
-            if (fromStep == 0 && toStep == 1) {
-                // Yard exit jump
-                visualStepOverrides[key] = 0
-                visualElevationHops[key] = 16f
-                delay(120)
-                visualStepOverrides[key] = 1
-                visualElevationHops[key] = 0f
-                delay(140)
-            } else {
-                // Step-by-step path traversal
-                for (s in (fromStep + 1)..toStep) {
-                    visualStepOverrides[key] = s
-                    visualElevationHops[key] = 10f
-                    delay(75)
+                if (fromStep == 0 && toStep == 1) {
+                    // Yard exit jump
+                    visualStepOverrides[key] = 0
+                    visualElevationHops[key] = 14f
+                    delay(90)
+                    visualStepOverrides[key] = 1
                     visualElevationHops[key] = 0f
-                    delay(30)
+                    delay(100)
+                } else {
+                    // Step-by-step path traversal with responsive cadence
+                    for (s in (fromStep + 1)..toStep) {
+                        visualStepOverrides[key] = s
+                        visualElevationHops[key] = 8f
+                        delay(45)
+                        visualElevationHops[key] = 0f
+                        delay(20)
+                    }
                 }
-            }
 
-            // If a capture accompanied the move, display temporary visual burst
-            if (capturedTokensList.isNotEmpty()) {
-                val captured = capturedTokensList.first()
-                captureNotification = "💥 Player ${captured.first.playerId}'s token captured!"
-                delay(600)
-                captureNotification = null
+                // If a capture accompanied the move, display temporary visual burst
+                if (capturedTokensList.isNotEmpty()) {
+                    val captured = capturedTokensList.first()
+                    captureNotification = "💥 Player ${captured.first.playerId}'s token captured!"
+                    delay(500)
+                    captureNotification = null
+                }
+            } finally {
+                // ALWAYS clean up state maps and release input lock
+                visualStepOverrides.remove(key)
+                visualElevationHops.remove(key)
+                isAnimationActive = false
             }
-
-            visualStepOverrides.remove(key)
-            visualElevationHops.remove(key)
-            isAnimationActive = false
         }
     }
 

@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -48,11 +49,13 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.R
 import com.example.game.ludo.model.LudoPlayer
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonPurpleBright
@@ -114,10 +117,14 @@ fun LudoWinnerOverlay(
                         .padding(22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Royal Golden Crown Hero Art (winnercrown.png style vector)
-                    Canvas(modifier = Modifier.size(72.dp)) {
-                        drawRoyalCrown(center = Offset(size.width / 2f, size.height / 2f), size = size.width * 0.88f)
-                    }
+                    // Royal Golden Crown Hero Art using actual winnercrown.png asset
+                    Image(
+                        painter = painterResource(id = R.drawable.winnercrown),
+                        contentDescription = "Victory Crown",
+                        modifier = Modifier
+                            .size(80.dp)
+                            .testTag("winner_crown_image")
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -138,14 +145,25 @@ fun LudoWinnerOverlay(
                     val firstWinner = players.find { it.playerId == winners.firstOrNull() }
                     val winnerName = firstWinner?.name ?: "Player 1"
 
-                    Text(
-                        text = "$winnerName has conquered the board!",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 15.sp,
-                            textAlign = TextAlign.Center,
-                            color = TextPrimary
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.winner),
+                            contentDescription = "Champion Badge",
+                            modifier = Modifier.size(24.dp)
                         )
-                    )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "$winnerName has conquered the board!",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                color = TextPrimary
+                            )
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 

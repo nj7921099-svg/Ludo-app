@@ -24,7 +24,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,11 +45,7 @@ import kotlinx.coroutines.delay
 
 /**
  * Modern interactive dice component for rolling in Ludo with tumbling animation.
- *
- * @param diceValue Current authoritative rolled value (1..6) or null.
- * @param turnPhase Current phase of the active turn.
- * @param activeColor Color of the active player.
- * @param onDiceClick Invoked when player taps the dice.
+ * Fully cancellation-safe and optimized for real-device frame rates.
  */
 @Composable
 fun LudoDiceControl(
@@ -64,20 +59,24 @@ fun LudoDiceControl(
 ) {
     val isRollable = (turnPhase == TurnPhase.WAITING_FOR_DICE_ROLL) && !isMoveLocked
     val primaryColor = LudoThemeColors.getPrimaryColor(activeColor)
-    val glowColor = LudoThemeColors.getGlowColor(activeColor)
-    val darkColor = LudoThemeColors.getDarkColor(activeColor)
 
-    // Pulsing scale for when ready to roll
-    val infiniteTransition = rememberInfiniteTransition(label = "dice_pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = if (isRollable) 1.08f else 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 650, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dice_scale"
-    )
+    // Pulsing scale ONLY when ready to roll (saves GPU/CPU when waiting for moves)
+    val pulseScale: Float
+    if (isRollable) {
+        val infiniteTransition = rememberInfiniteTransition(label = "dice_pulse")
+        val animatedScale by infiniteTransition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = 1.08f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dice_scale"
+        )
+        pulseScale = animatedScale
+    } else {
+        pulseScale = 1.0f
+    }
 
     // Dynamic tumble animation states
     val rotationAnim = remember { Animatable(0f) }
@@ -88,20 +87,27 @@ fun LudoDiceControl(
     // Synchronize and animate whenever authoritative diceValue changes or rolls
     LaunchedEffect(diceValue, turnPhase) {
         if (diceValue != null && turnPhase == TurnPhase.WAITING_FOR_TOKEN_SELECTION) {
-            isRollingVisual = true
-            // Quick 3-stage tumble
-            for (i in 1..4) {
-                displayedValue = ((i * 2 + (diceValue ?: 1)) % 6) + 1
-                rotationAnim.animateTo(
-                    targetValue = if (i % 2 == 0) 14f else -14f,
-                    animationSpec = tween(durationMillis = 50, easing = LinearEasing)
-                )
+            try {
+                isRollingVisual = true
+                // Snappy 3-stage visual tumble (180ms total)
+                for (i in 1..3) {
+                    displayedValue = ((i * 2 + diceValue) % 6) + 1
+                    rotationAnim.animateTo(
+                        targetValue = if (i % 2 == 0) 12f else -12f,
+                        animationSpec = tween(durationMillis = 50, easing = LinearEasing)
+                    )
+                }
+                rotationAnim.animateTo(0f, animationSpec = tween(durationMillis = 40))
+                displayedValue = diceValue // Authoritative final value
+                scaleAnim.snapTo(1.12f)
+                scaleAnim.animateTo(1.0f, animationSpec = spring(dampingRatio = 0.65f))
+            } finally {
+                // Guarantee authoritative settlement even if cancelled
+                displayedValue = diceValue
+                rotationAnim.snapTo(0f)
+                scaleAnim.snapTo(1f)
+                isRollingVisual = false
             }
-            rotationAnim.animateTo(0f, animationSpec = spring())
-            scaleAnim.snapTo(1.18f)
-            displayedValue = diceValue // Authoritative final value
-            scaleAnim.animateTo(1.0f, animationSpec = spring(dampingRatio = 0.6f))
-            isRollingVisual = false
         } else {
             displayedValue = diceValue
             rotationAnim.snapTo(0f)
@@ -160,10 +166,9 @@ fun LudoDiceControl(
             style = MaterialTheme.typography.labelSmall.copy(
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
-                letterSpacing = 1.2.sp,
-                color = if (isRollable) glowColor else Color(0xFF8E84A8)
+                letterSpacing = 1.sp,
+                color = if (isRollable) primaryColor else Color(0xFF8B7FA8)
             )
         )
     }
 }
-

@@ -9,22 +9,29 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import com.example.R
 import com.example.game.ludo.model.BoardCoordinate
 import com.example.game.ludo.model.LudoBoardCoordinates
 import com.example.game.ludo.model.LudoColor
 
 /**
  * Pure Canvas rendering of the canonical 15x15 Ludo board.
- * Renders all bases, common tracks, safe cells with golden stars, home runways, and center finish triangles.
+ * Renders all bases, common tracks, safe cells with actual xpstar.png assets, home runways, and center finish triangles.
  */
 @Composable
 fun LudoBoardCanvas(
     modifier: Modifier = Modifier
 ) {
+    val starBitmap = ImageBitmap.imageResource(id = R.drawable.xpstar)
+
     Canvas(modifier = modifier.fillMaxSize()) {
         val boardWidth = size.width
         val cellSize = boardWidth / 15f
@@ -74,7 +81,8 @@ fun LudoBoardCanvas(
                 cellSize = cellSize,
                 isSafe = isSafe,
                 startColor = startColor,
-                isStartCell = isStart
+                isStartCell = isStart,
+                starBitmap = starBitmap
             )
         }
 
@@ -236,7 +244,8 @@ private fun DrawScope.drawTrackCell(
     cellSize: Float,
     isSafe: Boolean,
     startColor: LudoColor?,
-    isStartCell: Boolean
+    isStartCell: Boolean,
+    starBitmap: ImageBitmap
 ) {
     val x = coord.col * cellSize
     val y = coord.row * cellSize
@@ -274,33 +283,13 @@ private fun DrawScope.drawTrackCell(
     val cx = x + cellSize / 2f
     val cy = y + cellSize / 2f
 
-    // Draw Golden Star for safe cells (xpstar style)
+    // Draw Golden Star for safe cells using actual xpstar.png asset
     if (isSafe) {
-        val starRadius = cellSize * 0.34f
-        val starColor = if (startColor != null) {
-            LudoThemeColors.getPrimaryColor(startColor)
-        } else {
-            LudoThemeColors.SafeStarColor
-        }
-
-        // Soft star glow behind
-        drawCircle(
-            color = starColor.copy(alpha = 0.25f),
-            radius = starRadius * 1.25f,
-            center = Offset(cx, cy)
-        )
-
-        drawStar(
-            center = Offset(cx, cy),
-            radius = starRadius,
-            color = starColor
-        )
-
-        // Inner star highlight core
-        drawStar(
-            center = Offset(cx, cy),
-            radius = starRadius * 0.45f,
-            color = Color.White.copy(alpha = 0.7f)
+        val starSize = (cellSize * 0.72f).toInt()
+        drawImage(
+            image = starBitmap,
+            dstOffset = IntOffset((cx - starSize / 2f).toInt(), (cy - starSize / 2f).toInt()),
+            dstSize = IntSize(starSize, starSize)
         )
     }
 

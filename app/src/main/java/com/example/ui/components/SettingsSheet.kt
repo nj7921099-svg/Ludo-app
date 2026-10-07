@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,11 +52,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.R
 import com.example.network.model.HostConnectionState
 import com.example.network.model.NetworkConnectionState
 import com.example.ui.theme.NeonAmber
@@ -228,6 +231,52 @@ fun SettingsDialog(
                                             )
                                         )
                                     }
+                                }
+                            }
+
+                            // Sound & Audio FX Toggle using soundon / soundoff assets
+                            var isSoundEnabled by remember { mutableStateOf(true) }
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = NeonDarkCardElevated,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF282845)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isSoundEnabled = !isSoundEnabled }
+                                    .testTag("sound_toggle_row")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Image(
+                                            painter = painterResource(id = if (isSoundEnabled) R.drawable.soundon else R.drawable.soundoff),
+                                            contentDescription = "Sound Effect",
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = "Sound & Audio Effects",
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = TextPrimary,
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                text = if (isSoundEnabled) "Sound FX Enabled" else "Sound FX Muted",
+                                                color = TextSecondary,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = if (isSoundEnabled) "ON" else "OFF",
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSoundEnabled) NeonGreenBright else TextSecondary,
+                                        fontSize = 13.sp
+                                    )
                                 }
                             }
 

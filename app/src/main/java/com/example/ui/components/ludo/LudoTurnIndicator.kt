@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -34,9 +35,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
+import com.example.game.ludo.model.LudoColor
 import com.example.game.ludo.model.LudoPlayer
 import com.example.game.ludo.model.TurnPhase
 import com.example.ui.theme.TextPrimary
@@ -90,18 +94,17 @@ fun LudoTurnIndicator(
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Color circle indicator with glowing border
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(LudoThemeColors.getLightColor(color), primaryColor),
-                                    radius = 26f
-                                )
-                            )
-                            .border(2.dp, Color.White, CircleShape)
+                    // Player pawn graphic using actual uploaded piece asset
+                    val pawnRes = when (color) {
+                        LudoColor.RED -> R.drawable.redpiece
+                        LudoColor.GREEN -> R.drawable.greenpiece
+                        LudoColor.YELLOW -> R.drawable.yellowpiece
+                        LudoColor.BLUE -> R.drawable.bluepiece
+                    }
+                    Image(
+                        painter = painterResource(id = pawnRes),
+                        contentDescription = "${color.displayName} Pawn",
+                        modifier = Modifier.size(28.dp)
                     )
 
                     Spacer(modifier = Modifier.width(10.dp))
