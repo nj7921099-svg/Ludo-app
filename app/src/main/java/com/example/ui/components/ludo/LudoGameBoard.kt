@@ -256,14 +256,15 @@ fun LudoGameBoard(
                 .fillMaxWidth()
                 .aspectRatio(1.0f)
                 .testTag("ludo_board_card"),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = LudoThemeColors.BoardBg),
-            border = androidx.compose.foundation.BorderStroke(2.dp, NeonPurple)
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            border = androidx.compose.foundation.BorderStroke(2.5.dp, Color(0xFF1E1B2E)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(12.dp))
             ) {
                 val boardWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
                 val cellSizePx = boardWidthPx / 15f

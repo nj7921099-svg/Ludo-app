@@ -4,35 +4,38 @@ import androidx.compose.ui.graphics.Color
 import com.example.game.ludo.model.LudoColor
 
 /**
- * Visual styling and vibrant colors for modern Ludo board rendering.
+ * Visual styling and vibrant colors for classic reference-accurate Ludo board rendering.
+ * Matches classic 4-color board: Green (top-left), Yellow (top-right), Red (bottom-left), Blue (bottom-right).
  */
 object LudoThemeColors {
-    val RedPrimary = Color(0xFFEF4444)
-    val RedDark = Color(0xFF451114)
-    val RedLight = Color(0xFFFCA5A5)
-    val RedGlow = Color(0xFFFF5252)
+    // Reference image vibrant colors
+    val RedPrimary = Color(0xFFE2262B)
+    val RedDark = Color(0xFFB81B1F)
+    val RedLight = Color(0xFFFF8B8E)
+    val RedGlow = Color(0xFFFF4D4D)
 
-    val GreenPrimary = Color(0xFF22C55E)
-    val GreenDark = Color(0xFF0F3D1F)
-    val GreenLight = Color(0xFF86EFAC)
-    val GreenGlow = Color(0xFF4ADE80)
+    val GreenPrimary = Color(0xFF009B48)
+    val GreenDark = Color(0xFF007536)
+    val GreenLight = Color(0xFF55C77A)
+    val GreenGlow = Color(0xFF2FD66F)
 
-    val YellowPrimary = Color(0xFFFACC15)
-    val YellowDark = Color(0xFF453609)
-    val YellowLight = Color(0xFFFEF08A)
-    val YellowGlow = Color(0xFFFFE082)
+    val YellowPrimary = Color(0xFFFFDF00)
+    val YellowDark = Color(0xFFCCA700)
+    val YellowLight = Color(0xFFFFF275)
+    val YellowGlow = Color(0xFFFFEB3B)
 
-    val BluePrimary = Color(0xFF3B82F6)
-    val BlueDark = Color(0xFF11254A)
-    val BlueLight = Color(0xFF93C5FD)
-    val BlueGlow = Color(0xFF60A5FA)
+    val BluePrimary = Color(0xFF139FE0)
+    val BlueDark = Color(0xFF0A7BAF)
+    val BlueLight = Color(0xFF6ED3FF)
+    val BlueGlow = Color(0xFF38B6FF)
 
-    val TrackCellBg = Color(0xFF131022)
-    val TrackCellBorder = Color(0xFF2E264E)
-    val SafeStarColor = Color(0xFFFFD700)
-    val SafeStarGlow = Color(0xFFFFE57F)
-    val BoardBg = Color(0xFF0A0815)
-    val CenterHomeBg = Color(0xFF18132C)
+    // Classic white board styling
+    val TrackCellBg = Color(0xFFFFFFFF)
+    val TrackCellBorder = Color(0xFF222222)
+    val SafeStarColor = Color(0xFF333333)
+    val SafeStarGlow = Color(0xFF666666)
+    val BoardBg = Color(0xFFFFFFFF)
+    val CenterHomeBg = Color(0xFFFFFFFF)
     val GoldCrown = Color(0xFFFFD700)
     val GoldCrownLight = Color(0xFFFFF3B0)
 
