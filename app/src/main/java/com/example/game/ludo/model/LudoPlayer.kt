@@ -9,6 +9,7 @@ package com.example.game.ludo.model
  * @param tokens List of exactly 4 tokens belonging to this player.
  * @param isFinished True when all 4 tokens have reached FINISHED state.
  * @param finishRank Placement order (1 for 1st place, 2 for 2nd place, etc.), or null if not yet finished.
+ * @param teamId Explicit team membership (e.g. TEAM_1 or TEAM_2 in Team-Up mode, or null in Individual mode).
  */
 data class LudoPlayer(
     val playerId: Int,
@@ -16,7 +17,8 @@ data class LudoPlayer(
     val name: String = "Player $playerId",
     val tokens: List<LudoToken> = (0..3).map { LudoToken(tokenId = it, playerId = playerId) },
     val isFinished: Boolean = false,
-    val finishRank: Int? = null
+    val finishRank: Int? = null,
+    val teamId: LudoTeamId? = null
 ) {
     init {
         require(tokens.size == 4) { "Every Ludo player must have exactly 4 tokens, found ${tokens.size}" }

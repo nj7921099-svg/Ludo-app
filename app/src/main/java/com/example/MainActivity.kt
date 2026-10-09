@@ -26,10 +26,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -63,6 +65,7 @@ import com.example.ui.components.GameArena
 import com.example.ui.components.GlobalConnectionIndicator
 import com.example.ui.components.ProtocolSpecsDialog
 import com.example.ui.components.SettingsDialog
+import com.example.ui.components.stats.StatisticsDialog
 import com.example.ui.components.TopControllerBar
 import com.example.ui.components.ludo.LudoGameBoard
 import com.example.ui.theme.MyApplicationTheme
@@ -100,9 +103,11 @@ fun MainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val logs by viewModel.logs.collectAsStateWithLifecycle()
+    val statisticsData by viewModel.statisticsData.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var isSettingsOpen by remember { mutableStateOf(false) }
+    var isStatsOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier
@@ -240,7 +245,25 @@ fun MainScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(60.dp)) // balance indicator
+                // Top-Right: Statistics Button (Phase 9)
+                IconButton(
+                    onClick = { isStatsOpen = true },
+                    modifier = Modifier.testTag("top_bar_stats_button")
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color(0xFF140F28), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = "Statistics & History",
+                            tint = NeonPurpleBright,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
             }
 
             AnimatedContent(
@@ -269,7 +292,7 @@ fun MainScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             if (!uiState.isGameStarted) {
-                                // SELECT PLAYERS Card
+                                // SELECT PLAYERS Card with Game Mode Selection (Phase 8B)
                                 BoxCountSelector(
                                     selectedCount = uiState.selectedBoxCount,
                                     isGameStarted = false,
@@ -278,6 +301,10 @@ fun MainScreen(
                                     },
                                     onStartGame = {
                                         viewModel.startGame()
+                                    },
+                                    selectedGameMode = uiState.selectedGameMode,
+                                    onGameModeSelected = { mode ->
+                                        viewModel.selectGameMode(mode)
                                     }
                                 )
 
@@ -310,6 +337,9 @@ fun MainScreen(
                                     },
                                     onBackToSetup = {
                                         viewModel.resetToSetup()
+                                    },
+                                    onViewStats = {
+                                        isStatsOpen = true
                                     }
                                 )
                             }
@@ -366,6 +396,15 @@ fun MainScreen(
     if (uiState.isProtocolInfoVisible) {
         ProtocolSpecsDialog(
             onDismiss = { viewModel.showProtocolInfo(false) }
+        )
+    }
+
+    // Statistics & Match History Dialog (Phase 9)
+    if (isStatsOpen) {
+        StatisticsDialog(
+            statisticsData = statisticsData,
+            onClearAllStatistics = { viewModel.clearAllStatistics() },
+            onDismiss = { isStatsOpen = false }
         )
     }
 }

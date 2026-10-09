@@ -100,7 +100,8 @@ fun LudoGameBoard(
     onNewGame: () -> Unit,
     onBackToSetup: () -> Unit,
     modifier: Modifier = Modifier,
-    isMoveLocked: Boolean = false
+    isMoveLocked: Boolean = false,
+    onViewStats: () -> Unit = {}
 ) {
     val activePlayer = gameState.activePlayer
     val hasPendingForActive = pendingCommands.containsKey(gameState.currentPlayerId)
@@ -330,7 +331,8 @@ fun LudoGameBoard(
                 winners = gameState.winners,
                 players = gameState.players,
                 onNewGame = onNewGame,
-                onBackToSetup = onBackToSetup
+                onBackToSetup = onBackToSetup,
+                onViewStats = onViewStats
             )
         }
     }
@@ -347,7 +349,18 @@ private fun buildTokenRenderList(
     val items = mutableListOf<TokenRenderItem>()
 
     gameState.players.forEach { player ->
-        val isCurrentTurn = (player.playerId == gameState.currentPlayerId)
+        val activePlayer = gameState.activePlayer
+        val isPartnerAssistance = (gameState.gameMode == com.example.game.ludo.model.LudoGameMode.TEAM_UP &&
+                activePlayer != null &&
+                activePlayer.isFinished &&
+                activePlayer.teamId != null)
+        val tokenOwnerPlayerId = if (isPartnerAssistance) {
+            gameState.players.find { it.playerId != activePlayer!!.playerId && it.teamId == activePlayer.teamId }?.playerId ?: gameState.currentPlayerId
+        } else {
+            gameState.currentPlayerId
+        }
+
+        val isTargetPlayer = (player.playerId == tokenOwnerPlayerId)
         val isWaitingToken = (gameState.turnPhase == TurnPhase.WAITING_FOR_TOKEN_SELECTION)
 
         player.tokens.forEach { token ->
@@ -360,7 +373,7 @@ private fun buildTokenRenderList(
                 tokenId = token.tokenId,
                 stepCount = effectiveStep
             )
-            val isLegal = isCurrentTurn && isWaitingToken && (token.tokenId in gameState.legalTokenIds)
+            val isLegal = isTargetPlayer && isWaitingToken && (token.tokenId in gameState.legalTokenIds)
 
             items.add(
                 TokenRenderItem(

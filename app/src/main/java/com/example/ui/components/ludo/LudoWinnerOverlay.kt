@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -71,7 +72,8 @@ fun LudoWinnerOverlay(
     winners: List<Int>,
     players: List<LudoPlayer>,
     onNewGame: () -> Unit,
-    onBackToSetup: () -> Unit
+    onBackToSetup: () -> Unit,
+    onViewStats: () -> Unit = {}
 ) {
     val scaleAnim = remember { Animatable(0.75f) }
     val particleAnim = remember { Animatable(0f) }
@@ -256,6 +258,33 @@ fun LudoWinnerOverlay(
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // View Match Stats Action
+                    OutlinedButton(
+                        onClick = onViewStats,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("winner_btn_view_stats"),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurpleBright.copy(alpha = 0.6f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonPurpleBright)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "View Match Stats",
+                            color = NeonPurpleBright,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
                     }
                 }
             }

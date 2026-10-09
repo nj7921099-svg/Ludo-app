@@ -12,16 +12,24 @@ import com.example.game.ludo.engine.LudoDiceBridge
 import com.example.game.ludo.engine.LudoGameEngine
 import com.example.game.ludo.engine.PendingDiceCommand
 import com.example.game.ludo.engine.PendingNumberStore
+import com.example.game.ludo.model.LudoGameMode
 import com.example.game.ludo.model.LudoGameState
 import com.example.game.ludo.model.LudoMoveResult
+import com.example.game.ludo.model.TurnPhase
+import com.example.game.ludo.persistence.LudoStatePersistence
+import com.example.game.ludo.stats.LudoStatisticsManager
+import com.example.game.ludo.stats.model.LudoStatisticsData
+import com.example.game.ludo.stats.persistence.LudoStatisticsPersistence
 import com.example.network.NetworkConstants
 import com.example.network.model.AckMsg
 import com.example.network.model.BoxIdParser
 import com.example.network.model.ConfigMsg
 import com.example.network.model.GameEventMsg
 import com.example.network.model.GetConfigMsg
+import com.example.network.model.GetLudoStateMsg
 import com.example.network.model.HandshakeMsg
 import com.example.network.model.HostConnectionState
+import com.example.network.model.LudoStateSyncMsg
 import com.example.network.model.NetworkConnectionState
 import com.example.network.model.NetworkMessage
 import com.example.network.model.NumberResultMsg
@@ -29,6 +37,7 @@ import com.example.network.model.NumberSelectionMsg
 import com.example.network.model.SendResult
 import com.example.network.model.StateSyncMsg
 import com.example.network.service.WifiHostServer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -58,7 +67,8 @@ data class MainUiState(
     val lastRollSummary: String? = null,
     val isInputLocked: Boolean = false,
     val ludoGameState: LudoGameState = LudoGameState(),
-    val pendingNumbers: Map<Int, Int> = emptyMap()
+    val pendingNumbers: Map<Int, Int> = emptyMap(),
+    val selectedGameMode: LudoGameMode = LudoGameMode.INDIVIDUAL
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -73,8 +83,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Dedicated Wi-Fi Host TCP server & NSD advertiser
     val wifiHostServer: WifiHostServer = WifiHostServer(application.applicationContext, viewModelScope)
 
+    // Dedicated State Persistence & Recovery manager (Phase 7)
+    val statePersistence: LudoStatePersistence = LudoStatePersistence(application.applicationContext)
+
+    // Dedicated Statistics & Match History subsystem (Phase 9)
+    val statisticsPersistence: LudoStatisticsPersistence = LudoStatisticsPersistence(application.applicationContext)
+    val statisticsManager: LudoStatisticsManager = LudoStatisticsManager(statisticsPersistence)
+    val statisticsData: StateFlow<LudoStatisticsData> = statisticsManager.statisticsData
+
     private val _currentTab = MutableStateFlow(AppTab.GAME)
     val currentTab: StateFlow<AppTab> = _currentTab.asStateFlow()
+
+    // Pre-game selected game mode state (Phase 8B)
+    private val _selectedGameMode = MutableStateFlow(LudoGameMode.INDIVIDUAL)
+    val selectedGameMode: StateFlow<LudoGameMode> = _selectedGameMode.asStateFlow()
 
     private data class UiAuxState(
         val lastRollSummary: String? = "Select player boxes and press START GAME",
@@ -110,7 +132,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingNumberStore.pendingCommands,
         wifiHostServer.connectionState,
         _currentTab,
-        _uiAux
+        _uiAux,
+        _selectedGameMode
     ) { args: Array<Any?> ->
         val snapshot = args[0] as GameSnapshot
         val boxesMap = args[1] as Map<Int, BoxState>
@@ -119,6 +142,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val connState = args[4] as NetworkConnectionState
         val tab = args[5] as AppTab
         val aux = args[6] as UiAuxState
+        val mode = args[7] as LudoGameMode
 
         val sortedBoxes = if (snapshot.isStarted) {
             (1..snapshot.activeCount).map { id ->
@@ -143,7 +167,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             lastRollSummary = aux.lastRollSummary,
             isInputLocked = aux.isInputLocked,
             ludoGameState = ludoState,
-            pendingNumbers = pendingNumbersMap
+            pendingNumbers = pendingNumbersMap,
+            selectedGameMode = mode
         )
     }.stateIn(
         scope = viewModelScope,
@@ -166,8 +191,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             wifiHostServer.connectionState.collect { connState ->
                 if (connState.state == HostConnectionState.CONNECTED) {
                     sendCurrentGameConfiguration()
+                    broadcastLudoStateSync()
                 }
             }
+        }
+
+        // State Persistence & Recovery (Phase 7)
+        // Attempt to load and restore any valid persisted LudoGameState snapshot
+        try {
+            val savedSnapshot = statePersistence.loadState()
+            if (savedSnapshot != null && savedSnapshot.isGameStarted) {
+                ludoGameEngine.restoreState(savedSnapshot)
+                val restoreSummary = when (savedSnapshot.turnPhase) {
+                    TurnPhase.WAITING_FOR_DICE_ROLL -> "Restored game: Player ${savedSnapshot.currentPlayerId}'s turn (tap to roll)."
+                    TurnPhase.WAITING_FOR_TOKEN_SELECTION -> "Restored game: Player ${savedSnapshot.currentPlayerId} rolled ${savedSnapshot.diceValue}. Tap a highlighted token."
+                    TurnPhase.GAME_OVER -> "🏆 Match Finished! Winner: Player ${savedSnapshot.winners.firstOrNull() ?: 1}."
+                    else -> "Game restored for Player ${savedSnapshot.currentPlayerId}."
+                }
+                _uiAux.update { it.copy(lastRollSummary = restoreSummary) }
+                wifiHostServer.appendLog("✓ Restored saved match: P${savedSnapshot.currentPlayerId}'s turn (phase: ${savedSnapshot.turnPhase}, players: ${savedSnapshot.playerCount})")
+            }
+        } catch (e: Exception) {
+            wifiHostServer.appendLog("Failed to restore saved game state: ${e.message}")
         }
     }
 
@@ -179,16 +224,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiAux.update { it.copy(isProtocolInfoVisible = show) }
     }
 
-    private fun sendCurrentGameConfiguration() {
+    fun sendCurrentGameConfiguration() {
         if (!wifiHostServer.connectionState.value.isFullyConnected) return
 
+        val ludoState = ludoGameEngine.gameState.value
+        val isStarted = ludoState.isGameStarted || gameEngine.isGameStarted.value
+        val boxCount = if (ludoState.isGameStarted) {
+            ludoState.playerCount
+        } else if (gameEngine.isGameStarted.value) {
+            gameEngine.activeBoxCount.value
+        } else {
+            gameEngine.selectedBoxCount.value
+        }
+        val activeBox = if (ludoState.isGameStarted) ludoState.currentPlayerId else gameEngine.activeBoxId.value
+
         val msg = ConfigMsg(
-            boxCount = if (gameEngine.isGameStarted.value) gameEngine.activeBoxCount.value else gameEngine.selectedBoxCount.value,
+            boxCount = boxCount,
             turnId = gameEngine.currentTurnId.value,
-            activeBoxId = gameEngine.activeBoxId.value,
-            isGameStarted = gameEngine.isGameStarted.value
+            activeBoxId = activeBox,
+            isGameStarted = isStarted,
+            ludoState = ludoState
         )
         wifiHostServer.sendMessage(msg)
+    }
+
+    fun broadcastLudoStateSync(requestId: String? = null) {
+        if (!wifiHostServer.connectionState.value.isFullyConnected) return
+
+        val ludoState = ludoGameEngine.gameState.value
+        val isStarted = ludoState.isGameStarted || gameEngine.isGameStarted.value
+        val boxCount = if (ludoState.isGameStarted) {
+            ludoState.playerCount
+        } else if (gameEngine.isGameStarted.value) {
+            gameEngine.activeBoxCount.value
+        } else {
+            gameEngine.selectedBoxCount.value
+        }
+        val activeBox = if (ludoState.isGameStarted) ludoState.currentPlayerId else gameEngine.activeBoxId.value
+
+        val msg = StateSyncMsg(
+            boxCount = boxCount,
+            turnId = gameEngine.currentTurnId.value,
+            activeBoxId = activeBox,
+            isGameStarted = isStarted,
+            ludoState = ludoState,
+            requestId = requestId ?: UUID.randomUUID().toString()
+        )
+        wifiHostServer.sendMessage(msg)
+        wifiHostServer.appendLog("✓ STATE_SYNC broadcast sent (P$activeBox, phase: ${ludoState.turnPhase}, started: $isStarted)")
     }
 
     private suspend fun handleIncomingNetworkMessage(message: NetworkMessage) {
@@ -199,10 +282,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             is GetConfigMsg -> {
                 sendCurrentGameConfiguration()
+                broadcastLudoStateSync()
             }
 
             is StateSyncMsg -> {
                 sendCurrentGameConfiguration()
+                broadcastLudoStateSync(message.requestId)
+            }
+
+            is GetLudoStateMsg -> {
+                broadcastLudoStateSync(message.requestId)
             }
 
             is GameEventMsg -> {
@@ -332,19 +421,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectBoxCount(count: Int) {
+        if (_selectedGameMode.value == LudoGameMode.TEAM_UP && count != 4) {
+            // Team-Up requires strictly 4 players; ignore invalid counts safely
+            return
+        }
         if (gameEngine.selectBoxCount(count)) {
-            _uiAux.update { it.copy(lastRollSummary = "$count players selected. Press START GAME.") }
+            val modeLabel = if (_selectedGameMode.value == LudoGameMode.TEAM_UP) "Team-Up 2v2" else "Individual"
+            _uiAux.update { it.copy(lastRollSummary = "$count players selected ($modeLabel). Press START GAME.") }
             sendCurrentGameConfiguration()
+            broadcastLudoStateSync()
         }
     }
 
+    /**
+     * Updates the pre-game selected game mode.
+     * When [LudoGameMode.TEAM_UP] is selected, automatically sets selected player count to 4.
+     * When [LudoGameMode.INDIVIDUAL] is selected, preserves current count if 2..4 or defaults safely to 4.
+     */
+    fun selectGameMode(mode: LudoGameMode) {
+        if (_selectedGameMode.value == mode) return
+
+        _selectedGameMode.value = mode
+        if (mode == LudoGameMode.TEAM_UP) {
+            gameEngine.selectBoxCount(4)
+            _uiAux.update { it.copy(lastRollSummary = "Team-Up 2v2 selected (4 players: Red & Yellow vs Green & Blue). Press START GAME.") }
+        } else {
+            val currentCount = gameEngine.selectedBoxCount.value
+            val targetCount = if (currentCount in 2..4) currentCount else 4
+            gameEngine.selectBoxCount(targetCount)
+            _uiAux.update { it.copy(lastRollSummary = "Individual mode selected ($targetCount players). Press START GAME.") }
+        }
+        sendCurrentGameConfiguration()
+        broadcastLudoStateSync()
+    }
+
     fun startGame() {
+        val mode = _selectedGameMode.value
+        val requestedCount = if (mode == LudoGameMode.TEAM_UP) 4 else gameEngine.selectedBoxCount.value
+
+        // Validate before proceeding
+        if (mode == LudoGameMode.TEAM_UP && requestedCount != 4) {
+            _uiAux.update { it.copy(lastRollSummary = "Cannot start Team-Up without exactly 4 players.") }
+            return
+        }
+
+        // Initialize engine with selected mode
+        val engineInitSuccess = ludoGameEngine.initGame(
+            playerCount = requestedCount.coerceIn(2, 4),
+            gameMode = mode
+        )
+
+        if (!engineInitSuccess) {
+            _uiAux.update { it.copy(lastRollSummary = "Failed to start game: invalid mode or player count.") }
+            return
+        }
+
         if (gameEngine.startGame()) {
             val count = gameEngine.activeBoxCount.value
-            ludoGameEngine.initGame(count.coerceIn(2, 4))
-            _uiAux.update { it.copy(lastRollSummary = "Game started with $count boxes! R1's turn (tap to roll).") }
-            wifiHostServer.appendLog("Game started with $count boxes. Active turn: R1")
+            val modeDesc = if (mode == LudoGameMode.TEAM_UP) "Team-Up 2v2" else "Individual"
+            _uiAux.update { it.copy(lastRollSummary = "Game started ($modeDesc, $count boxes)! R1's turn (tap to roll).") }
+            wifiHostServer.appendLog("Game started ($modeDesc) with $count boxes. Active turn: R1")
+
+            // Initialize active statistics tracking session (Phase 9)
+            statisticsManager.startNewSession(ludoGameEngine.gameState.value)
+
+            persistCurrentLudoState()
             sendCurrentGameConfiguration()
+            broadcastLudoStateSync()
         }
     }
 
@@ -375,6 +518,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             wifiHostServer.appendLog("Dice roll: Player ${result.playerId} rolled ${result.diceValue} via $sourceLabel")
 
+            // Record authoritative dice activation statistics (Phase 9)
+            statisticsManager.onDiceRolled(
+                playerId = result.playerId,
+                diceValue = result.diceValue,
+                acceptedByEngine = result.acceptedByEngine
+            )
+
             // Broadcast NUMBER_RESULT to Controller client
             if (wifiHostServer.connectionState.value.isFullyConnected) {
                 val resultMsg = NumberResultMsg(
@@ -399,7 +549,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     wifiHostServer.sendMessage(eventMsg)
                 }
+
+                // Broadcast authoritative Ludo state sync
+                broadcastLudoStateSync()
             }
+
+            // Authoritative state change persisted
+            persistCurrentLudoState()
         }
         return result
     }
@@ -429,6 +585,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiAux.update { it.copy(lastRollSummary = summary) }
             wifiHostServer.appendLog("Token moved: Player ${result.playerId} token $tokenId -> step ${result.toStep}. Next: Player ${result.nextPlayerId}")
 
+            // Record authoritative token move statistics (Phase 9)
+            // Identify effective token owner to ensure partner assistance finishes are credited correctly
+            val currentState = ludoGameEngine.gameState.value
+            val isPartnerAssistance = (currentState.gameMode == LudoGameMode.TEAM_UP) &&
+                    (currentState.players.find { it.playerId == result.playerId }?.isFinished == true)
+            val effectiveTokenOwnerId = if (isPartnerAssistance) {
+                val activeP = currentState.players.find { it.playerId == result.playerId }
+                currentState.players.find { it.playerId != result.playerId && it.teamId == activeP?.teamId }?.playerId ?: result.playerId
+            } else {
+                result.playerId
+            }
+            statisticsManager.onTokenMoved(result, effectiveTokenOwnerId)
+
+            // If move concluded the match, finalize and commit statistics atomically
+            if (result.isGameOver) {
+                statisticsManager.finalizeMatchIfGameOver(currentState)
+            }
+
             // Also broadcast TURN_UPDATE
             if (wifiHostServer.connectionState.value.isFullyConnected) {
                 val eventMsg = GameEventMsg(
@@ -439,16 +613,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     previousResult = result.diceValue
                 )
                 wifiHostServer.sendMessage(eventMsg)
+
+                // Broadcast authoritative Ludo state sync
+                broadcastLudoStateSync()
             }
+
+            // Authoritative state change persisted (token moved, captured, finished, extra turn, or game over)
+            persistCurrentLudoState()
         }
         return result
     }
 
     fun restartLudoRematch() {
-        val count = ludoGameEngine.gameState.value.playerCount
-        ludoGameEngine.initGame(count)
+        val currentLudoState = ludoGameEngine.gameState.value
+        val count = currentLudoState.playerCount
+        val mode = currentLudoState.gameMode
+
+        // Ensure any completed match in the previous session was finalized
+        if (currentLudoState.isGameOver) {
+            statisticsManager.finalizeMatchIfGameOver(currentLudoState)
+        }
+
+        ludoGameEngine.initGame(playerCount = count, gameMode = mode)
         pendingNumberStore.clear()
-        _uiAux.update { it.copy(lastRollSummary = "New match started! Player 1's turn (tap dice to roll).") }
+
+        // Start a fresh, separate statistics session with a new matchId (Phase 9)
+        statisticsManager.startNewSession(ludoGameEngine.gameState.value)
+
+        val modeLabel = if (mode == LudoGameMode.TEAM_UP) "Team-Up 2v2" else "Individual"
+        _uiAux.update { it.copy(lastRollSummary = "New match started ($modeLabel)! Player 1's turn (tap dice to roll).") }
+        persistCurrentLudoState()
+        sendCurrentGameConfiguration()
+        broadcastLudoStateSync()
     }
 
     fun tapBox(boxId: Int) {
@@ -505,6 +701,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         gameEngine.resetToSetup()
         ludoGameEngine.resetToSetup()
         pendingNumberStore.clear()
+        clearPersistedLudoState()
+
+        // Discard active uncompleted match statistics session (Phase 9)
+        statisticsManager.discardActiveSession()
+
+        // If TEAM_UP is currently selected, ensure player count is synchronized to 4
+        if (_selectedGameMode.value == LudoGameMode.TEAM_UP) {
+            gameEngine.selectBoxCount(4)
+        }
+
         _uiAux.update { it.copy(lastRollSummary = "Game reset to Setup. Select player count and start new game.") }
         wifiHostServer.appendLog("Ludo game reset to Setup mode")
 
@@ -515,6 +721,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeBoxId = 1
             )
             wifiHostServer.sendMessage(eventMsg)
+            sendCurrentGameConfiguration()
+            broadcastLudoStateSync()
         }
     }
 
@@ -532,6 +740,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearLogs() {
         wifiHostServer.clearLogs()
+    }
+
+    /**
+     * Clears all lifetime statistics and match history records.
+     * Delegates atomically to [statisticsManager.clearAllStatistics].
+     * Does NOT affect active matches, gameplay state, networking, or state persistence.
+     */
+    fun clearAllStatistics() {
+        statisticsManager.clearAllStatistics()
+    }
+
+    /**
+     * Asynchronously persists the current authoritative [LudoGameState] to disk on Dispatchers.IO.
+     * Never interrupts gameplay or drops UI frames if I/O fails.
+     */
+    fun persistCurrentLudoState() {
+        val state = ludoGameEngine.gameState.value
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                statePersistence.saveState(state)
+            } catch (e: Exception) {
+                // Failure safety: never crash gameplay
+            }
+        }
+    }
+
+    /**
+     * Asynchronously clears the persisted snapshot on Dispatchers.IO.
+     */
+    fun clearPersistedLudoState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                statePersistence.clearState()
+            } catch (e: Exception) {
+                // Ignore cleanup error safely
+            }
+        }
     }
 
     override fun onCleared() {

@@ -1,5 +1,7 @@
 package com.example.network.model
 
+import com.example.game.ludo.model.LudoGameState
+import com.example.game.ludo.model.LudoGameStateSerializer
 import com.example.network.NetworkConstants
 import org.json.JSONObject
 import java.util.UUID
@@ -28,6 +30,8 @@ sealed class NetworkMessage {
         const val TYPE_GET_CONFIG = "GET_CONFIG"
         const val TYPE_CONFIG = "CONFIG"
         const val TYPE_STATE_SYNC = "STATE_SYNC"
+        const val TYPE_LUDO_STATE_SYNC = "LUDO_STATE_SYNC"
+        const val TYPE_GET_LUDO_STATE = "GET_LUDO_STATE"
         const val TYPE_NUMBER_SELECTION = "NUMBER_SELECTION"
         const val TYPE_NUMBER_RESULT = "NUMBER_RESULT"
         const val TYPE_GAME_EVENT = "GAME_EVENT"
@@ -110,20 +114,49 @@ sealed class NetworkMessage {
                         timestamp = timestamp
                     )
 
-                    TYPE_CONFIG -> ConfigMsg(
-                        boxCount = json.optInt("boxCount", NetworkConstants.DEFAULT_BOX_COUNT),
-                        turnId = json.optLong("turnId", 1L),
-                        activeBoxId = json.optInt("activeBoxId", 1),
-                        isGameStarted = json.optBoolean("isGameStarted", false),
-                        requestId = requestId,
-                        timestamp = timestamp
-                    )
+                    TYPE_CONFIG -> {
+                        val ludoStateObj = json.optJSONObject("ludoState") ?: json.optJSONObject("gameState")
+                        val parsedLudoState = ludoStateObj?.let { LudoGameStateSerializer.stateFromJson(it) }
+                        ConfigMsg(
+                            boxCount = json.optInt("boxCount", NetworkConstants.DEFAULT_BOX_COUNT),
+                            turnId = json.optLong("turnId", 1L),
+                            activeBoxId = json.optInt("activeBoxId", 1),
+                            isGameStarted = json.optBoolean("isGameStarted", false),
+                            ludoState = parsedLudoState,
+                            requestId = requestId,
+                            timestamp = timestamp
+                        )
+                    }
 
-                    TYPE_STATE_SYNC -> StateSyncMsg(
-                        boxCount = json.optInt("boxCount", NetworkConstants.DEFAULT_BOX_COUNT),
-                        turnId = json.optLong("turnId", 1L),
-                        activeBoxId = json.optInt("activeBoxId", 1),
-                        isGameStarted = json.optBoolean("isGameStarted", false),
+                    TYPE_STATE_SYNC -> {
+                        val ludoStateObj = json.optJSONObject("ludoState") ?: json.optJSONObject("gameState")
+                        val parsedLudoState = ludoStateObj?.let { LudoGameStateSerializer.stateFromJson(it) }
+                        StateSyncMsg(
+                            boxCount = json.optInt("boxCount", NetworkConstants.DEFAULT_BOX_COUNT),
+                            turnId = json.optLong("turnId", 1L),
+                            activeBoxId = json.optInt("activeBoxId", 1),
+                            isGameStarted = json.optBoolean("isGameStarted", false),
+                            ludoState = parsedLudoState,
+                            requestId = requestId,
+                            timestamp = timestamp
+                        )
+                    }
+
+                    TYPE_LUDO_STATE_SYNC -> {
+                        val ludoStateObj = json.optJSONObject("ludoState") ?: json.optJSONObject("gameState") ?: json
+                        val parsedLudoState = LudoGameStateSerializer.stateFromJson(ludoStateObj)
+                        LudoStateSyncMsg(
+                            ludoState = parsedLudoState,
+                            turnId = json.optLong("turnId", 1L),
+                            activeBoxId = json.optInt("activeBoxId", parsedLudoState.currentPlayerId),
+                            boxCount = json.optInt("boxCount", parsedLudoState.playerCount),
+                            isGameStarted = json.optBoolean("isGameStarted", parsedLudoState.isGameStarted),
+                            requestId = requestId,
+                            timestamp = timestamp
+                        )
+                    }
+
+                    TYPE_GET_LUDO_STATE -> GetLudoStateMsg(
                         requestId = requestId,
                         timestamp = timestamp
                     )
@@ -349,6 +382,7 @@ data class ConfigMsg(
     val turnId: Long,
     val activeBoxId: Int,
     val isGameStarted: Boolean,
+    val ludoState: LudoGameState? = null,
     override val requestId: String = UUID.randomUUID().toString(),
     override val timestamp: Long = System.currentTimeMillis()
 ) : NetworkMessage() {
@@ -360,6 +394,11 @@ data class ConfigMsg(
         put("turnId", turnId)
         put("activeBoxId", activeBoxId)
         put("isGameStarted", isGameStarted)
+        if (ludoState != null) {
+            val stateJson = LudoGameStateSerializer.stateToJson(ludoState)
+            put("ludoState", stateJson)
+            put("gameState", stateJson)
+        }
         put("requestId", requestId)
         put("timestamp", timestamp)
     }
@@ -370,6 +409,7 @@ data class StateSyncMsg(
     val turnId: Long,
     val activeBoxId: Int,
     val isGameStarted: Boolean,
+    val ludoState: LudoGameState? = null,
     override val requestId: String = UUID.randomUUID().toString(),
     override val timestamp: Long = System.currentTimeMillis()
 ) : NetworkMessage() {
@@ -381,6 +421,49 @@ data class StateSyncMsg(
         put("turnId", turnId)
         put("activeBoxId", activeBoxId)
         put("isGameStarted", isGameStarted)
+        if (ludoState != null) {
+            val stateJson = LudoGameStateSerializer.stateToJson(ludoState)
+            put("ludoState", stateJson)
+            put("gameState", stateJson)
+        }
+        put("requestId", requestId)
+        put("timestamp", timestamp)
+    }
+}
+
+data class LudoStateSyncMsg(
+    val ludoState: LudoGameState,
+    val turnId: Long = 1L,
+    val activeBoxId: Int = ludoState.currentPlayerId,
+    val boxCount: Int = ludoState.playerCount,
+    val isGameStarted: Boolean = ludoState.isGameStarted,
+    override val requestId: String = UUID.randomUUID().toString(),
+    override val timestamp: Long = System.currentTimeMillis()
+) : NetworkMessage() {
+    override val type: String = TYPE_LUDO_STATE_SYNC
+
+    override fun toJsonObject(): JSONObject = JSONObject().apply {
+        put("type", type)
+        put("boxCount", boxCount)
+        put("turnId", turnId)
+        put("activeBoxId", activeBoxId)
+        put("isGameStarted", isGameStarted)
+        val stateJson = LudoGameStateSerializer.stateToJson(ludoState)
+        put("ludoState", stateJson)
+        put("gameState", stateJson)
+        put("requestId", requestId)
+        put("timestamp", timestamp)
+    }
+}
+
+data class GetLudoStateMsg(
+    override val requestId: String = UUID.randomUUID().toString(),
+    override val timestamp: Long = System.currentTimeMillis()
+) : NetworkMessage() {
+    override val type: String = TYPE_GET_LUDO_STATE
+
+    override fun toJsonObject(): JSONObject = JSONObject().apply {
+        put("type", type)
         put("requestId", requestId)
         put("timestamp", timestamp)
     }

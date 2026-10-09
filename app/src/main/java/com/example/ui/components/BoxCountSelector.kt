@@ -33,7 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.NeonDarkCard
+import com.example.game.ludo.model.LudoGameMode
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonPurpleBright
 import com.example.ui.theme.TextPrimary
@@ -44,9 +44,12 @@ fun BoxCountSelector(
     isGameStarted: Boolean,
     onCountSelected: (Int) -> Unit,
     onStartGame: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selectedGameMode: LudoGameMode = LudoGameMode.INDIVIDUAL,
+    onGameModeSelected: (LudoGameMode) -> Unit = {}
 ) {
     val choices = listOf(2, 3, 4, 5, 6)
+    val isTeamUp = selectedGameMode == LudoGameMode.TEAM_UP
 
     Card(
         modifier = modifier
@@ -62,18 +65,104 @@ fun BoxCountSelector(
                 .padding(vertical = 18.dp, horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // "SELECT PLAYERS" Title
+            // "GAME MODE" Title
             Text(
-                text = "SELECT PLAYERS",
+                text = "GAME MODE",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     letterSpacing = 1.2.sp,
                     color = TextPrimary
                 )
             )
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Game Mode Segmented Selector: [Individual] [Team-Up 2v2]
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("game_mode_selector_row"),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Individual Button
+                val isIndivSelected = selectedGameMode == LudoGameMode.INDIVIDUAL
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(
+                            width = if (isIndivSelected) 2.dp else 1.dp,
+                            color = if (isIndivSelected) Color(0xFFE9D5FF) else NeonPurple.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .clickable { onGameModeSelected(LudoGameMode.INDIVIDUAL) }
+                        .testTag("mode_button_individual"),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isIndivSelected) Color(0xFF261845) else Color(0xFF110E1E)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Individual",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = if (isIndivSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                fontSize = 13.sp,
+                                color = if (isIndivSelected) Color.White else Color(0xFFB3A8CA)
+                            )
+                        )
+                    }
+                }
+
+                // Team-Up 2v2 Button
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(
+                            width = if (isTeamUp) 2.dp else 1.dp,
+                            color = if (isTeamUp) Color(0xFFE9D5FF) else NeonPurple.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .clickable { onGameModeSelected(LudoGameMode.TEAM_UP) }
+                        .testTag("mode_button_team_up"),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isTeamUp) Color(0xFF261845) else Color(0xFF110E1E)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Team-Up 2v2",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = if (isTeamUp) FontWeight.ExtraBold else FontWeight.Medium,
+                                fontSize = 13.sp,
+                                color = if (isTeamUp) Color.White else Color(0xFFB3A8CA)
+                            )
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
+
+            // "SELECT PLAYERS" Title
+            Text(
+                text = "SELECT PLAYERS",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.sp,
+                    letterSpacing = 1.2.sp,
+                    color = TextPrimary
+                )
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Row of player number buttons: [2] [3] [4] [5] [6]
             Row(
@@ -82,7 +171,13 @@ fun BoxCountSelector(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 choices.forEach { count ->
-                    val isSupported = count in 2..4
+                    // In TEAM_UP mode: exactly 4 players is supported; 2 and 3 are disabled.
+                    // In INDIVIDUAL mode: 2, 3, and 4 players are supported.
+                    val isSupported = if (isTeamUp) {
+                        count == 4
+                    } else {
+                        count in 2..4
+                    }
                     val isSelected = selectedCount == count
                     val scale by animateFloatAsState(
                         targetValue = if (isSelected) 1.05f else 1.0f,
@@ -133,8 +228,8 @@ fun BoxCountSelector(
                             )
                             if (!isSupported) {
                                 Text(
-                                    text = "P10",
-                                    fontSize = 8.sp,
+                                    text = if (isTeamUp && count in 2..3) "4P ONLY" else "P10",
+                                    fontSize = if (isTeamUp && count in 2..3) 7.sp else 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF7A6894)
                                 )
@@ -144,10 +239,14 @@ fun BoxCountSelector(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Standard Ludo board supports 2, 3, or 4 players.",
+                text = if (isTeamUp) {
+                    "Team-Up is a 2v2 battle: Red & Yellow vs Green & Blue (4 players required)."
+                } else {
+                    "Standard Ludo board supports 2, 3, or 4 players."
+                },
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontSize = 11.sp,
                     color = Color(0xFF8E84A8)
