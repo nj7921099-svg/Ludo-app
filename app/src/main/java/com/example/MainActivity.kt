@@ -292,7 +292,7 @@ fun MainScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             if (!uiState.isGameStarted) {
-                                // SELECT PLAYERS Card with Game Mode Selection (Phase 8B)
+                                // SELECT PLAYERS Card with Game Mode & Bot Selection (Phase 8B & Phase 10)
                                 BoxCountSelector(
                                     selectedCount = uiState.selectedBoxCount,
                                     isGameStarted = false,
@@ -305,6 +305,14 @@ fun MainScreen(
                                     selectedGameMode = uiState.selectedGameMode,
                                     onGameModeSelected = { mode ->
                                         viewModel.selectGameMode(mode)
+                                    },
+                                    botOpponentMode = uiState.botOpponentMode,
+                                    botPlayerIds = uiState.botPlayerIds,
+                                    onOpponentModeSelected = { mode ->
+                                        viewModel.selectBotOpponentMode(mode)
+                                    },
+                                    onTogglePlayerControl = { playerId ->
+                                        viewModel.toggleBotPlayer(playerId)
                                     }
                                 )
 

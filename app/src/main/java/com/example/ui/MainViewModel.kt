@@ -7,6 +7,7 @@ import com.example.game.GameEngine
 import com.example.game.RandomNumberGameEngine
 import com.example.game.model.BoxState
 import com.example.game.model.RollSource
+import com.example.game.ludo.ai.LudoBotStrategy
 import com.example.game.ludo.engine.DiceActivationResult
 import com.example.game.ludo.engine.LudoDiceBridge
 import com.example.game.ludo.engine.LudoGameEngine
@@ -37,7 +38,9 @@ import com.example.network.model.NumberSelectionMsg
 import com.example.network.model.SendResult
 import com.example.network.model.StateSyncMsg
 import com.example.network.service.WifiHostServer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,6 +57,12 @@ enum class AppTab {
     CONNECT
 }
 
+enum class BotOpponentMode {
+    ALL_HUMAN,
+    VS_BOTS,
+    CUSTOM
+}
+
 data class MainUiState(
     val isGameStarted: Boolean = false,
     val selectedBoxCount: Int = NetworkConstants.DEFAULT_BOX_COUNT,
@@ -68,7 +77,9 @@ data class MainUiState(
     val isInputLocked: Boolean = false,
     val ludoGameState: LudoGameState = LudoGameState(),
     val pendingNumbers: Map<Int, Int> = emptyMap(),
-    val selectedGameMode: LudoGameMode = LudoGameMode.INDIVIDUAL
+    val selectedGameMode: LudoGameMode = LudoGameMode.INDIVIDUAL,
+    val botPlayerIds: Set<Int> = emptySet(),
+    val botOpponentMode: BotOpponentMode = BotOpponentMode.ALL_HUMAN
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -97,6 +108,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Pre-game selected game mode state (Phase 8B)
     private val _selectedGameMode = MutableStateFlow(LudoGameMode.INDIVIDUAL)
     val selectedGameMode: StateFlow<LudoGameMode> = _selectedGameMode.asStateFlow()
+
+    // Bot Player Configuration & Automation (Phase 10)
+    private val _botPlayerIds = MutableStateFlow<Set<Int>>(emptySet())
+    val botPlayerIds: StateFlow<Set<Int>> = _botPlayerIds.asStateFlow()
+
+    private val _botOpponentMode = MutableStateFlow(BotOpponentMode.ALL_HUMAN)
+    val botOpponentMode: StateFlow<BotOpponentMode> = _botOpponentMode.asStateFlow()
+
+    var botActionDelayMs: Long = 500L
+
+    private data class BotActionKey(
+        val playerId: Int,
+        val turnPhase: TurnPhase,
+        val diceValue: Int?,
+        val consecutiveSixCount: Int
+    )
+
+    private var botActionJob: Job? = null
+    private var currentActionKey: BotActionKey? = null
+    private var isBotActionInProgress = false
 
     private data class UiAuxState(
         val lastRollSummary: String? = "Select player boxes and press START GAME",
@@ -133,7 +164,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         wifiHostServer.connectionState,
         _currentTab,
         _uiAux,
-        _selectedGameMode
+        _selectedGameMode,
+        _botPlayerIds,
+        _botOpponentMode
     ) { args: Array<Any?> ->
         val snapshot = args[0] as GameSnapshot
         val boxesMap = args[1] as Map<Int, BoxState>
@@ -143,6 +176,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tab = args[5] as AppTab
         val aux = args[6] as UiAuxState
         val mode = args[7] as LudoGameMode
+        val botIds = args[8] as Set<Int>
+        val opponentMode = args[9] as BotOpponentMode
 
         val sortedBoxes = if (snapshot.isStarted) {
             (1..snapshot.activeCount).map { id ->
@@ -168,7 +203,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isInputLocked = aux.isInputLocked,
             ludoGameState = ludoState,
             pendingNumbers = pendingNumbersMap,
-            selectedGameMode = mode
+            selectedGameMode = mode,
+            botPlayerIds = botIds,
+            botOpponentMode = opponentMode
         )
     }.stateIn(
         scope = viewModelScope,
@@ -193,6 +230,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     sendCurrentGameConfiguration()
                     broadcastLudoStateSync()
                 }
+            }
+        }
+
+        // Observe Ludo game state changes for safe bot-turn coordination (Phase 10)
+        viewModelScope.launch {
+            ludoGameEngine.gameState.collect { state ->
+                handleLudoStateForBot(state)
             }
         }
 
@@ -426,6 +470,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (gameEngine.selectBoxCount(count)) {
+            // Prune or sync bot configuration for new player count
+            when (_botOpponentMode.value) {
+                BotOpponentMode.ALL_HUMAN -> {
+                    _botPlayerIds.value = emptySet()
+                }
+                BotOpponentMode.VS_BOTS -> {
+                    _botPlayerIds.value = (2..count).toSet()
+                }
+                BotOpponentMode.CUSTOM -> {
+                    _botPlayerIds.update { current -> current.filter { it in 1..count }.toSet() }
+                }
+            }
             val modeLabel = if (_selectedGameMode.value == LudoGameMode.TEAM_UP) "Team-Up 2v2" else "Individual"
             _uiAux.update { it.copy(lastRollSummary = "$count players selected ($modeLabel). Press START GAME.") }
             sendCurrentGameConfiguration()
@@ -444,11 +500,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedGameMode.value = mode
         if (mode == LudoGameMode.TEAM_UP) {
             gameEngine.selectBoxCount(4)
+            when (_botOpponentMode.value) {
+                BotOpponentMode.ALL_HUMAN -> _botPlayerIds.value = emptySet()
+                BotOpponentMode.VS_BOTS -> _botPlayerIds.value = (2..4).toSet()
+                BotOpponentMode.CUSTOM -> _botPlayerIds.update { current -> current.filter { it in 1..4 }.toSet() }
+            }
             _uiAux.update { it.copy(lastRollSummary = "Team-Up 2v2 selected (4 players: Red & Yellow vs Green & Blue). Press START GAME.") }
         } else {
             val currentCount = gameEngine.selectedBoxCount.value
             val targetCount = if (currentCount in 2..4) currentCount else 4
             gameEngine.selectBoxCount(targetCount)
+            when (_botOpponentMode.value) {
+                BotOpponentMode.ALL_HUMAN -> _botPlayerIds.value = emptySet()
+                BotOpponentMode.VS_BOTS -> _botPlayerIds.value = (2..targetCount).toSet()
+                BotOpponentMode.CUSTOM -> _botPlayerIds.update { current -> current.filter { it in 1..targetCount }.toSet() }
+            }
             _uiAux.update { it.copy(lastRollSummary = "Individual mode selected ($targetCount players). Press START GAME.") }
         }
         sendCurrentGameConfiguration()
@@ -456,6 +522,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startGame() {
+        cancelPendingBotAction()
         val mode = _selectedGameMode.value
         val requestedCount = if (mode == LudoGameMode.TEAM_UP) 4 else gameEngine.selectedBoxCount.value
 
@@ -625,6 +692,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restartLudoRematch() {
+        cancelPendingBotAction()
         val currentLudoState = ludoGameEngine.gameState.value
         val count = currentLudoState.playerCount
         val mode = currentLudoState.gameMode
@@ -698,6 +766,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetToSetup() {
+        cancelPendingBotAction()
         gameEngine.resetToSetup()
         ludoGameEngine.resetToSetup()
         pendingNumberStore.clear()
@@ -709,6 +778,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // If TEAM_UP is currently selected, ensure player count is synchronized to 4
         if (_selectedGameMode.value == LudoGameMode.TEAM_UP) {
             gameEngine.selectBoxCount(4)
+        }
+
+        // Validate and preserve bot configuration safely for setup count
+        val count = if (_selectedGameMode.value == LudoGameMode.TEAM_UP) 4 else gameEngine.selectedBoxCount.value
+        when (_botOpponentMode.value) {
+            BotOpponentMode.ALL_HUMAN -> _botPlayerIds.value = emptySet()
+            BotOpponentMode.VS_BOTS -> _botPlayerIds.value = (2..count).toSet()
+            BotOpponentMode.CUSTOM -> _botPlayerIds.update { current -> current.filter { it in 1..count }.toSet() }
         }
 
         _uiAux.update { it.copy(lastRollSummary = "Game reset to Setup. Select player count and start new game.") }
@@ -723,6 +800,168 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             wifiHostServer.sendMessage(eventMsg)
             sendCurrentGameConfiguration()
             broadcastLudoStateSync()
+        }
+    }
+
+    // =========================================================================
+    // Bot Player Control & Safe Execution Coordination (Phase 10)
+    // =========================================================================
+
+    /**
+     * Updates the bot opponent preset mode:
+     * - [BotOpponentMode.ALL_HUMAN]: all players human, botPlayerIds is empty.
+     * - [BotOpponentMode.VS_BOTS]: P1 is human, all other active players (P2..Pn) are bots.
+     * - [BotOpponentMode.CUSTOM]: custom per-slot toggling (e.g. for Team-Up 2v2).
+     */
+    fun selectBotOpponentMode(mode: BotOpponentMode) {
+        _botOpponentMode.value = mode
+        val activeCount = if (_selectedGameMode.value == LudoGameMode.TEAM_UP) 4 else gameEngine.selectedBoxCount.value
+        when (mode) {
+            BotOpponentMode.ALL_HUMAN -> {
+                setBotPlayers(emptySet())
+            }
+            BotOpponentMode.VS_BOTS -> {
+                setBotPlayers((2..activeCount).toSet())
+            }
+            BotOpponentMode.CUSTOM -> {
+                val valid = _botPlayerIds.value.filter { it in 1..activeCount }.toSet()
+                setBotPlayers(valid)
+            }
+        }
+    }
+
+    /**
+     * Updates the set of player IDs configured as automated bots.
+     * Triggers bot action evaluation if the current turn owner is a bot.
+     * Automatically synchronizes [botOpponentMode] based on the provided IDs.
+     */
+    fun setBotPlayers(playerIds: Set<Int>) {
+        val activeCount = if (_selectedGameMode.value == LudoGameMode.TEAM_UP) 4 else gameEngine.selectedBoxCount.value
+        val sanitized = playerIds.filter { it in 1..activeCount }.toSet()
+        _botPlayerIds.value = sanitized
+        _botOpponentMode.value = when {
+            sanitized.isEmpty() -> BotOpponentMode.ALL_HUMAN
+            sanitized == (2..activeCount).toSet() -> BotOpponentMode.VS_BOTS
+            else -> BotOpponentMode.CUSTOM
+        }
+        checkAndTriggerBotTurn()
+    }
+
+    /**
+     * Toggles the bot state for a specific player ID (1..activeCount).
+     */
+    fun toggleBotPlayer(playerId: Int) {
+        val activeCount = if (_selectedGameMode.value == LudoGameMode.TEAM_UP) 4 else gameEngine.selectedBoxCount.value
+        if (playerId !in 1..activeCount) return
+
+        val newSet = if (_botPlayerIds.value.contains(playerId)) {
+            _botPlayerIds.value - playerId
+        } else {
+            _botPlayerIds.value + playerId
+        }
+        setBotPlayers(newSet)
+    }
+
+    /**
+     * Returns true if the player ID is currently configured as a bot.
+     */
+    fun isBotPlayer(playerId: Int): Boolean {
+        return _botPlayerIds.value.contains(playerId)
+    }
+
+    private fun checkAndTriggerBotTurn() {
+        handleLudoStateForBot(ludoGameEngine.gameState.value)
+    }
+
+    private fun cancelPendingBotAction() {
+        botActionJob?.cancel()
+        botActionJob = null
+        currentActionKey = null
+    }
+
+    private fun handleLudoStateForBot(state: LudoGameState) {
+        if (!state.isGameStarted || state.isGameOver || !isBotPlayer(state.currentPlayerId)) {
+            cancelPendingBotAction()
+            return
+        }
+
+        if (state.turnPhase != TurnPhase.WAITING_FOR_DICE_ROLL &&
+            state.turnPhase != TurnPhase.WAITING_FOR_TOKEN_SELECTION
+        ) {
+            cancelPendingBotAction()
+            return
+        }
+
+        val newKey = BotActionKey(
+            playerId = state.currentPlayerId,
+            turnPhase = state.turnPhase,
+            diceValue = state.diceValue,
+            consecutiveSixCount = state.consecutiveSixCount
+        )
+
+        // Deduplication: prevent duplicate launch if already scheduled or in-flight for this exact action key
+        if (newKey == currentActionKey && (botActionJob?.isActive == true || isBotActionInProgress)) {
+            return
+        }
+
+        currentActionKey = newKey
+        botActionJob?.cancel()
+        botActionJob = viewModelScope.launch {
+            try {
+                if (botActionDelayMs > 0) {
+                    delay(botActionDelayMs)
+                }
+
+                // Await transient input lock if active (up to 1000ms safety timeout)
+                var waitCount = 0
+                while (_uiAux.value.isInputLocked && waitCount < 20) {
+                    delay(50)
+                    waitCount++
+                }
+                if (_uiAux.value.isInputLocked) {
+                    // Safe cancellation / abort if input lock remains stuck
+                    return@launch
+                }
+
+                // Post-delay validation: ensure state has not mutated or become stale
+                val latestState = ludoGameEngine.gameState.value
+                if (!latestState.isGameStarted || latestState.isGameOver) return@launch
+                if (latestState.currentPlayerId != newKey.playerId) return@launch
+                if (latestState.turnPhase != newKey.turnPhase) return@launch
+                if (!isBotPlayer(latestState.currentPlayerId)) return@launch
+
+                when (newKey.turnPhase) {
+                    TurnPhase.WAITING_FOR_DICE_ROLL -> {
+                        isBotActionInProgress = true
+                        try {
+                            activateLudoDice()
+                        } finally {
+                            isBotActionInProgress = false
+                        }
+                    }
+
+                    TurnPhase.WAITING_FOR_TOKEN_SELECTION -> {
+                        if (latestState.diceValue != newKey.diceValue) return@launch
+                        val selectedTokenId = LudoBotStrategy.selectToken(latestState)
+                        if (selectedTokenId != null && latestState.legalTokenIds.contains(selectedTokenId)) {
+                            isBotActionInProgress = true
+                            try {
+                                moveLudoToken(selectedTokenId)
+                            } finally {
+                                isBotActionInProgress = false
+                            }
+                        }
+                    }
+
+                    else -> {}
+                }
+            } catch (e: CancellationException) {
+                // Normal coroutine cancellation on turn transition, reset, or rematch
+            } finally {
+                if (currentActionKey == newKey) {
+                    currentActionKey = null
+                }
+            }
         }
     }
 
