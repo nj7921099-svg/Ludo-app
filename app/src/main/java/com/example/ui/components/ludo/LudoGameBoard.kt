@@ -101,6 +101,7 @@ fun LudoGameBoard(
     onBackToSetup: () -> Unit,
     modifier: Modifier = Modifier,
     isMoveLocked: Boolean = false,
+    botPlayerIds: Set<Int> = emptySet(),
     onViewStats: () -> Unit = {}
 ) {
     val activePlayer = gameState.activePlayer
@@ -250,6 +251,46 @@ fun LudoGameBoard(
             }
         }
 
+        // Top Player Panels (P1 Red on Top-Left, P2 Green on Top-Right)
+        val p1 = gameState.players.find { it.color == LudoColor.RED } ?: gameState.players.find { it.playerId == 1 }
+        val p2 = gameState.players.find { it.color == LudoColor.GREEN } ?: (if (gameState.playerCount > 2) gameState.players.find { it.playerId == 2 } else null)
+        val p3 = gameState.players.find { it.color == LudoColor.YELLOW } ?: gameState.players.find { it.playerId == (if (gameState.playerCount == 2) 2 else 3) }
+        val p4 = gameState.players.find { it.color == LudoColor.BLUE } ?: gameState.players.find { it.playerId == 4 }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (p1 != null) {
+                    LudoPlayerPanel(
+                        player = p1,
+                        isActiveTurn = gameState.currentPlayerId == p1.playerId,
+                        turnPhase = gameState.turnPhase,
+                        activeDiceValue = if (gameState.currentPlayerId == p1.playerId) gameState.diceValue else null,
+                        onDiceClick = onDiceClick,
+                        isMoveLocked = totalLock,
+                        isBot = botPlayerIds.contains(p1.playerId)
+                    )
+                }
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                if (p2 != null) {
+                    LudoPlayerPanel(
+                        player = p2,
+                        isActiveTurn = gameState.currentPlayerId == p2.playerId,
+                        turnPhase = gameState.turnPhase,
+                        activeDiceValue = if (gameState.currentPlayerId == p2.playerId) gameState.diceValue else null,
+                        onDiceClick = onDiceClick,
+                        isMoveLocked = totalLock,
+                        isBot = botPlayerIds.contains(p2.playerId)
+                    )
+                }
+            }
+        }
+
         // 2. Responsive 15x15 Board Container
         Card(
             modifier = Modifier
@@ -313,17 +354,41 @@ fun LudoGameBoard(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // 4. Interactive Bottom Dice Control
-        if (activePlayer != null) {
-            LudoDiceControl(
-                diceValue = gameState.diceValue,
-                turnPhase = gameState.turnPhase,
-                activeColor = activePlayer.color,
-                onDiceClick = onDiceClick,
-                isMoveLocked = totalLock
-            )
+        // Bottom Player Panels (P4 Blue on Bottom-Left, P3 Yellow on Bottom-Right)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (p4 != null) {
+                    LudoPlayerPanel(
+                        player = p4,
+                        isActiveTurn = gameState.currentPlayerId == p4.playerId,
+                        turnPhase = gameState.turnPhase,
+                        activeDiceValue = if (gameState.currentPlayerId == p4.playerId) gameState.diceValue else null,
+                        onDiceClick = onDiceClick,
+                        isMoveLocked = totalLock,
+                        isBot = botPlayerIds.contains(p4.playerId)
+                    )
+                }
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                if (p3 != null) {
+                    LudoPlayerPanel(
+                        player = p3,
+                        isActiveTurn = gameState.currentPlayerId == p3.playerId,
+                        turnPhase = gameState.turnPhase,
+                        activeDiceValue = if (gameState.currentPlayerId == p3.playerId) gameState.diceValue else null,
+                        onDiceClick = onDiceClick,
+                        isMoveLocked = totalLock,
+                        isBot = botPlayerIds.contains(p3.playerId)
+                    )
+                }
+            }
         }
 
         // 5. Winner Celebration Dialog

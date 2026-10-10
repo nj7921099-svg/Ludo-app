@@ -555,6 +555,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             persistCurrentLudoState()
             sendCurrentGameConfiguration()
             broadcastLudoStateSync()
+            checkAndTriggerBotTurn()
         }
     }
 
@@ -713,6 +714,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         persistCurrentLudoState()
         sendCurrentGameConfiguration()
         broadcastLudoStateSync()
+        checkAndTriggerBotTurn()
     }
 
     fun tapBox(boxId: Int) {

@@ -334,6 +334,7 @@ fun MainScreen(
                                     gameState = uiState.ludoGameState,
                                     pendingCommands = uiState.pendingNumbers,
                                     isMoveLocked = uiState.isInputLocked,
+                                    botPlayerIds = uiState.botPlayerIds,
                                     onDiceClick = {
                                         viewModel.activateLudoDice()
                                     },

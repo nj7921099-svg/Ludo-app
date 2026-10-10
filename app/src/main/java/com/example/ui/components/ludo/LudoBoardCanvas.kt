@@ -41,32 +41,32 @@ fun LudoBoardCanvas(
             size = size
         )
 
-        // 2. Draw 4 Corner Home Quadrants (6x6 cells each) exactly matching reference image:
-        // Top-Left: Green
+        // 2. Draw 4 Corner Home Quadrants (6x6 cells each):
+        // Top-Left: Red (P1 base)
         drawClassicCornerBase(
-            color = LudoColor.GREEN,
+            color = LudoColor.RED,
             startCol = 0, startRow = 0,
             cellSize = cellSize,
             gridStrokeWidth = gridStrokeWidth
         )
-        // Top-Right: Yellow
+        // Top-Right: Green (P2 base)
         drawClassicCornerBase(
-            color = LudoColor.YELLOW,
+            color = LudoColor.GREEN,
             startCol = 9, startRow = 0,
             cellSize = cellSize,
             gridStrokeWidth = gridStrokeWidth
         )
-        // Bottom-Left: Red
+        // Bottom-Right: Yellow (P3 base)
         drawClassicCornerBase(
-            color = LudoColor.RED,
-            startCol = 0, startRow = 9,
+            color = LudoColor.YELLOW,
+            startCol = 9, startRow = 9,
             cellSize = cellSize,
             gridStrokeWidth = gridStrokeWidth
         )
-        // Bottom-Right: Blue
+        // Bottom-Left: Blue (P4 base)
         drawClassicCornerBase(
             color = LudoColor.BLUE,
-            startCol = 9, startRow = 9,
+            startCol = 0, startRow = 9,
             cellSize = cellSize,
             gridStrokeWidth = gridStrokeWidth
         )
@@ -262,44 +262,44 @@ private fun DrawScope.drawClassicTrackCell(
 
 /**
  * Draws the 4 entry arrows into the home lanes from the board edges exactly as pictured in the reference image:
- * - Green (top middle): col 7, row 0 -> pointing down (Yellow/Gold arrow)
- * - Red (bottom middle): col 7, row 14 -> pointing up (Red arrow)
- * - Green entry arrow on left arm: col 0, row 7 -> pointing right (Green arrow)
- * - Blue entry arrow on right arm: col 14, row 7 -> pointing left (Blue arrow)
+ * - Green (top middle): col 7, row 0 -> pointing down (Green arrow into Green home lane)
+ * - Blue (bottom middle): col 7, row 14 -> pointing up (Blue arrow into Blue home lane)
+ * - Red (left arm middle): col 0, row 7 -> pointing right (Red arrow into Red home lane)
+ * - Yellow (right arm middle): col 14, row 7 -> pointing left (Yellow arrow into Yellow home lane)
  */
 private fun DrawScope.drawEntryArrows(cellSize: Float, gridStrokeWidth: Float) {
-    // Arrow 1: Top arm tip (col 7, row 0) pointing DOWN into yellow home lane
+    // Arrow 1: Top arm tip (col 7, row 0) pointing DOWN into Green home lane
     drawDirectionalArrow(
         center = Offset(7.5f * cellSize, 0.5f * cellSize),
         direction = ArrowDirection.DOWN,
-        color = LudoThemeColors.YellowPrimary,
-        cellSize = cellSize,
-        strokeWidth = gridStrokeWidth * 1.5f
-    )
-
-    // Arrow 2: Bottom arm tip (col 7, row 14) pointing UP into red home lane
-    drawDirectionalArrow(
-        center = Offset(7.5f * cellSize, 14.5f * cellSize),
-        direction = ArrowDirection.UP,
-        color = LudoThemeColors.RedPrimary,
-        cellSize = cellSize,
-        strokeWidth = gridStrokeWidth * 1.5f
-    )
-
-    // Arrow 3: Left arm tip (col 0, row 7) pointing RIGHT into green home lane
-    drawDirectionalArrow(
-        center = Offset(0.5f * cellSize, 7.5f * cellSize),
-        direction = ArrowDirection.RIGHT,
         color = LudoThemeColors.GreenPrimary,
         cellSize = cellSize,
         strokeWidth = gridStrokeWidth * 1.5f
     )
 
-    // Arrow 4: Right arm tip (col 14, row 7) pointing LEFT into blue home lane
+    // Arrow 2: Bottom arm tip (col 7, row 14) pointing UP into Blue home lane
+    drawDirectionalArrow(
+        center = Offset(7.5f * cellSize, 14.5f * cellSize),
+        direction = ArrowDirection.UP,
+        color = LudoThemeColors.BluePrimary,
+        cellSize = cellSize,
+        strokeWidth = gridStrokeWidth * 1.5f
+    )
+
+    // Arrow 3: Left arm tip (col 0, row 7) pointing RIGHT into Red home lane
+    drawDirectionalArrow(
+        center = Offset(0.5f * cellSize, 7.5f * cellSize),
+        direction = ArrowDirection.RIGHT,
+        color = LudoThemeColors.RedPrimary,
+        cellSize = cellSize,
+        strokeWidth = gridStrokeWidth * 1.5f
+    )
+
+    // Arrow 4: Right arm tip (col 14, row 7) pointing LEFT into Yellow home lane
     drawDirectionalArrow(
         center = Offset(14.5f * cellSize, 7.5f * cellSize),
         direction = ArrowDirection.LEFT,
-        color = LudoThemeColors.BluePrimary,
+        color = LudoThemeColors.YellowPrimary,
         cellSize = cellSize,
         strokeWidth = gridStrokeWidth * 1.5f
     )
@@ -375,41 +375,41 @@ private fun DrawScope.drawClassicCenterHome(cellSize: Float, gridStrokeWidth: Fl
         size = Size(3 * cellSize, 3 * cellSize)
     )
 
-    // Left triangle: Green (leading from green runway on left)
+    // Left triangle: Red (leading from red runway on left)
     val leftPath = Path().apply {
         moveTo(left, top)
         lineTo(cx, cy)
         lineTo(left, bottom)
         close()
     }
-    drawPath(leftPath, color = LudoThemeColors.GreenPrimary, style = Fill)
+    drawPath(leftPath, color = LudoThemeColors.RedPrimary, style = Fill)
 
-    // Top triangle: Yellow (leading from yellow runway on top)
+    // Top triangle: Green (leading from green runway on top)
     val topPath = Path().apply {
         moveTo(left, top)
         lineTo(cx, cy)
         lineTo(right, top)
         close()
     }
-    drawPath(topPath, color = LudoThemeColors.YellowPrimary, style = Fill)
+    drawPath(topPath, color = LudoThemeColors.GreenPrimary, style = Fill)
 
-    // Right triangle: Blue (leading from blue runway on right)
+    // Right triangle: Yellow (leading from yellow runway on right)
     val rightPath = Path().apply {
         moveTo(right, top)
         lineTo(cx, cy)
         lineTo(right, bottom)
         close()
     }
-    drawPath(rightPath, color = LudoThemeColors.BluePrimary, style = Fill)
+    drawPath(rightPath, color = LudoThemeColors.YellowPrimary, style = Fill)
 
-    // Bottom triangle: Red (leading from red runway on bottom)
+    // Bottom triangle: Blue (leading from blue runway on bottom)
     val bottomPath = Path().apply {
         moveTo(left, bottom)
         lineTo(cx, cy)
         lineTo(right, bottom)
         close()
     }
-    drawPath(bottomPath, color = LudoThemeColors.RedPrimary, style = Fill)
+    drawPath(bottomPath, color = LudoThemeColors.BluePrimary, style = Fill)
 
     // Diagonal partition lines
     drawLine(Color.Black, Offset(left, top), Offset(right, bottom), strokeWidth = gridStrokeWidth * 1.2f)
